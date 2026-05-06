@@ -120,9 +120,11 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
       send(view.pid, :some_unrelated_message)
       send(view.pid, {:tuple_with_no_matching_clause})
 
+      # Process must still be alive AND render its core content — the
+      # is_binary check alone would pass for any error page too.
       html = render(view)
-      assert is_binary(html)
       assert html =~ "Explore database tables"
+      assert Process.alive?(view.pid)
     end
   end
 end

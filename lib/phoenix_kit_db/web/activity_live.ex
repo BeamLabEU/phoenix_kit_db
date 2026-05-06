@@ -12,6 +12,8 @@ defmodule PhoenixKitDb.Web.ActivityLive do
   alias PhoenixKitDb
   alias PhoenixKitDb.Listener
 
+  require Logger
+
   @impl true
   def mount(params, _session, socket) do
     if connected?(socket) do
@@ -61,7 +63,10 @@ defmodule PhoenixKitDb.Web.ActivityLive do
   end
 
   @impl true
-  def handle_info(_msg, socket), do: {:noreply, socket}
+  def handle_info(msg, socket) do
+    Logger.debug("[#{inspect(__MODULE__)}] Unhandled info: #{inspect(msg)}")
+    {:noreply, socket}
+  end
 
   @impl true
   def handle_event("toggle_pause", _, socket) do

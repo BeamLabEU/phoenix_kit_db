@@ -156,8 +156,8 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
       send(view.pid, {:bogus, :tuple})
 
       html = render(view)
-      assert is_binary(html)
       assert html =~ "Live Database Activity"
+      assert Process.alive?(view.pid)
     end
   end
 end

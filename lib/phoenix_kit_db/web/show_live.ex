@@ -11,6 +11,8 @@ defmodule PhoenixKitDb.Web.ShowLive do
   alias PhoenixKitDb.Listener
   alias PhoenixKitDb.Paths
 
+  require Logger
+
   @default_per_page 20
   @allowed_per_page [10, 20, 50, 100, 200]
   @refresh_debounce_ms 1000
@@ -37,11 +39,7 @@ defmodule PhoenixKitDb.Web.ShowLive do
        )
        |> push_navigate(to: PhoenixKitDb.Paths.index())}
     else
-      if connected?(socket) do
-        # Subscribe to changes for this table and lazily install the trigger.
-        Listener.subscribe(schema, table)
-        PhoenixKitDb.ensure_trigger(schema, table)
-      end
+      if connected?(socket), do: setup_live_updates(schema, table)
 
       socket =
         socket
@@ -55,6 +53,29 @@ defmodule PhoenixKitDb.Web.ShowLive do
         |> assign(:refresh_scheduled, false)
 
       {:ok, socket}
+    end
+  end
+
+  # Note: subscribe runs AFTER table_preview/3 in mount above. Standard
+  # PubSub practice is subscribe-before-read, but here we want to
+  # validate the table exists before leaking a subscription on bogus
+  # identifiers. Cost: a broadcast in the gap is dropped; the next
+  # `:table_changed` arrival catches the LV up.
+  defp setup_live_updates(schema, table) do
+    Listener.subscribe(schema, table)
+
+    case PhoenixKitDb.ensure_trigger(schema, table) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        # Trigger install failed (DB permissions, transient error, etc.).
+        # The LV stays usable; live updates simply won't fire until
+        # something else installs the trigger.
+        Logger.warning(
+          "[#{inspect(__MODULE__)}] ensure_trigger(#{inspect(schema)}, " <>
+            "#{inspect(table)}) failed: #{inspect(reason)}"
+        )
     end
   end
 
@@ -139,8 +160,12 @@ defmodule PhoenixKitDb.Web.ShowLive do
   end
 
   # Defensive catch-all so a stray PubSub broadcast can't crash the LV.
+  # Logs at :debug to stay observable in dev but quiet in prod.
   @impl true
-  def handle_info(_msg, socket), do: {:noreply, socket}
+  def handle_info(msg, socket) do
+    Logger.debug("[#{inspect(__MODULE__)}] Unhandled info: #{inspect(msg)}")
+    {:noreply, socket}
+  end
 
   defp schedule_debounced_refresh(socket) do
     if socket.assigns[:refresh_scheduled] do

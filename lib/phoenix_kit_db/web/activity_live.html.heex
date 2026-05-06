@@ -64,6 +64,10 @@
               phx-change="filter_operation"
             >
               <option value="">{Gettext.gettext(PhoenixKitWeb.Gettext, "All")}</option>
+              <%!-- INSERT/UPDATE/DELETE are Postgres TG_OP protocol identifiers,
+                   universally readable by DBAs across locales. Deliberately
+                   not gettext-wrapped (same convention as the schema.table
+                   labels rendered above). --%>
               <option value="INSERT" selected={@filter_operation == "INSERT"}>INSERT</option>
               <option value="UPDATE" selected={@filter_operation == "UPDATE"}>UPDATE</option>
               <option value="DELETE" selected={@filter_operation == "DELETE"}>DELETE</option>

@@ -11,10 +11,21 @@ defmodule PhoenixKitDb.ActivityLoggingTest do
   use PhoenixKitDb.DataCase, async: false
 
   describe "enable_system/0" do
-    test "logs a db.module_enabled activity row" do
+    test "logs a db.module_enabled activity row with the right metadata shape" do
       PhoenixKitDb.enable_system()
 
-      assert_activity_logged("db.module_enabled")
+      # Pin the action atom AND the row's full metadata shape — every
+      # field the workspace audit feed expects (module, mode,
+      # resource_type) needs to land. assert_activity_logged returns
+      # the matched row so we can assert further on it.
+      row = assert_activity_logged("db.module_enabled")
+
+      assert row.module == "db"
+      assert row.mode == "manual"
+      assert row.resource_type == "module"
+      # No actor on a system-level toggle; the Modules LV in core
+      # invokes enable_system/0 without threading the user's UUID.
+      assert row.actor_uuid == nil
 
       # Reset to default for downstream tests in the same VM.
       PhoenixKitDb.disable_system()
@@ -31,10 +42,14 @@ defmodule PhoenixKitDb.ActivityLoggingTest do
   end
 
   describe "disable_system/0" do
-    test "logs a db.module_disabled activity row" do
+    test "logs a db.module_disabled activity row with the right metadata shape" do
       PhoenixKitDb.disable_system()
 
-      assert_activity_logged("db.module_disabled")
+      row = assert_activity_logged("db.module_disabled")
+
+      assert row.module == "db"
+      assert row.mode == "manual"
+      assert row.resource_type == "module"
     end
   end
 end

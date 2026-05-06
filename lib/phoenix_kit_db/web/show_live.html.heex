@@ -16,7 +16,7 @@
     <%!-- Actions --%>
     <div class="flex justify-end mb-6">
       <.link
-        navigate={"#{PhoenixKitDb.Paths.activity()}?table=#{@schema}.#{@table}"}
+        navigate={"#{PhoenixKitDb.Paths.activity()}?#{URI.encode_query(%{"table" => "#{@schema}.#{@table}"})}"}
         class="btn btn-ghost btn-sm"
       >
         <.icon name="hero-signal" class="w-4 h-4 mr-2" /> {Gettext.gettext(

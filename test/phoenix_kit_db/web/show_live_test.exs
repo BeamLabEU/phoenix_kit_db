@@ -94,6 +94,32 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       # Page indicator reflects the new page (the "Page N of M" badge updates)
       assert result =~ ~r/Page\s+2\s+of\s+\d+/
     end
+
+    test "malformed page param falls back to page 1", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+
+      # parse_page/1's fallback branch — non-integer string becomes 1.
+      {:ok, _view, html} = live(conn, "/en/admin/db/public/phoenix_kit_settings?page=bogus")
+
+      assert html =~ ~r/Page\s+1\s+of\s+\d+/
+    end
+
+    test "out-of-allowlist per_page falls back to default 20", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+
+      # parse_per_page/1 only accepts [10, 20, 50, 100, 200]; 9999 → 20.
+      {:ok, _view, html} = live(conn, "/en/admin/db/public/phoenix_kit_settings?per_page=9999")
+
+      assert html =~ ~r/<option value="20" selected/
+    end
+
+    test "non-numeric per_page param falls back to default", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+
+      {:ok, _view, html} = live(conn, "/en/admin/db/public/phoenix_kit_settings?per_page=abc")
+
+      assert html =~ ~r/<option value="20" selected/
+    end
   end
 
   describe "live updates" do
@@ -129,8 +155,8 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       send(view.pid, {:weird, :tuple})
 
       html = render(view)
-      assert is_binary(html)
       assert html =~ "phoenix_kit_settings"
+      assert Process.alive?(view.pid)
     end
   end
 end

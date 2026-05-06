@@ -12,6 +12,8 @@ defmodule PhoenixKitDb.Web.IndexLive do
   alias PhoenixKitDb.Listener
   alias PhoenixKitDb.Paths
 
+  require Logger
+
   @refresh_debounce_ms 2000
 
   @impl true
@@ -83,9 +85,13 @@ defmodule PhoenixKitDb.Web.IndexLive do
   end
 
   # Defensive catch-all so a stray PubSub broadcast or OTP message can't
-  # crash this LiveView with a FunctionClauseError.
+  # crash this LiveView with a FunctionClauseError. Logs at :debug to
+  # stay observable in dev but quiet in prod.
   @impl true
-  def handle_info(_msg, socket), do: {:noreply, socket}
+  def handle_info(msg, socket) do
+    Logger.debug("[#{inspect(__MODULE__)}] Unhandled info: #{inspect(msg)}")
+    {:noreply, socket}
+  end
 
   defp schedule_debounced_refresh(socket) do
     if socket.assigns[:refresh_scheduled] do
