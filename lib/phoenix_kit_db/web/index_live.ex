@@ -27,7 +27,7 @@ defmodule PhoenixKitDb.Web.IndexLive do
 
     socket =
       socket
-      |> assign(:page_title, "DB")
+      |> assign(:page_title, Gettext.gettext(PhoenixKitWeb.Gettext, "DB"))
       |> assign(:search, search)
       |> assign(:tables, tables)
       |> assign(:stats, PhoenixKitDb.database_stats())

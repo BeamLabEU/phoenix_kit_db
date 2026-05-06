@@ -2,9 +2,10 @@ defmodule PhoenixKitDb do
   @moduledoc """
   Database explorer module for PhoenixKit.
 
-  Provides metadata, stats, and paginated previews for Postgres tables so the
-  admin UI can browse data without exposing full SQL access. Live updates
-  ride on Postgres `LISTEN/NOTIFY` via the `PhoenixKitDb.Listener` GenServer.
+  Provides metadata, stats, and paginated previews for Postgres tables
+  so the admin UI can browse data without exposing full SQL access.
+  Live updates ride on Postgres `LISTEN/NOTIFY` via the
+  `PhoenixKitDb.Listener` GenServer.
 
   ## Live Updates
 
@@ -36,14 +37,19 @@ defmodule PhoenixKitDb do
 
   @textual_types ~w(text character varying character citext json jsonb uuid inet)
 
+  @typedoc "An identifier accepted by the schema/table-name validator."
+  @type identifier_string :: String.t()
+
   # ===========================================================================
   # Required callbacks
   # ===========================================================================
 
   @impl PhoenixKit.Module
+  @spec module_key() :: String.t()
   def module_key, do: "db"
 
   @impl PhoenixKit.Module
+  @spec module_name() :: String.t()
   def module_name, do: "DB"
 
   @impl PhoenixKit.Module
@@ -61,6 +67,7 @@ defmodule PhoenixKitDb do
   All branches return `false` so callers don't need to special-case
   startup ordering.
   """
+  @spec enabled?() :: boolean()
   def enabled? do
     Settings.get_boolean_setting(@enabled_key, false)
   rescue
@@ -70,13 +77,19 @@ defmodule PhoenixKitDb do
   end
 
   @impl PhoenixKit.Module
+  @spec enable_system() :: term()
   def enable_system do
-    Settings.update_boolean_setting_with_module(@enabled_key, true, module_key())
+    result = Settings.update_boolean_setting_with_module(@enabled_key, true, module_key())
+    log_module_toggle(:enabled)
+    result
   end
 
   @impl PhoenixKit.Module
+  @spec disable_system() :: term()
   def disable_system do
-    Settings.update_boolean_setting_with_module(@enabled_key, false, module_key())
+    result = Settings.update_boolean_setting_with_module(@enabled_key, false, module_key())
+    log_module_toggle(:disabled)
+    result
   end
 
   # ===========================================================================
@@ -84,12 +97,20 @@ defmodule PhoenixKitDb do
   # ===========================================================================
 
   @impl PhoenixKit.Module
+  @spec version() :: String.t()
   def version, do: "0.1.0"
 
   @impl PhoenixKit.Module
+  @spec css_sources() :: [atom()]
   def css_sources, do: [:phoenix_kit_db]
 
   @impl PhoenixKit.Module
+  @spec permission_metadata() :: %{
+          key: String.t(),
+          label: String.t(),
+          icon: String.t(),
+          description: String.t()
+        }
   def permission_metadata do
     %{
       key: module_key(),
@@ -100,6 +121,7 @@ defmodule PhoenixKitDb do
   end
 
   @impl PhoenixKit.Module
+  @spec get_config() :: map()
   def get_config do
     stats = database_stats()
 
@@ -113,6 +135,7 @@ defmodule PhoenixKitDb do
   end
 
   @impl PhoenixKit.Module
+  @spec admin_tabs() :: [Tab.t()]
   def admin_tabs do
     [
       # Parent tab — match: :prefix keeps subtabs highlighted on any /db/* page.
@@ -172,6 +195,7 @@ defmodule PhoenixKitDb do
   end
 
   @impl PhoenixKit.Module
+  @spec children() :: [module()]
   def children, do: [PhoenixKitDb.Listener]
 
   # ============================================================================
@@ -179,6 +203,12 @@ defmodule PhoenixKitDb do
   # ============================================================================
 
   @doc "Aggregated Postgres stats for all user tables."
+  @spec database_stats() :: %{
+          table_count: non_neg_integer(),
+          approx_rows: non_neg_integer(),
+          total_size_bytes: non_neg_integer(),
+          database_size_bytes: non_neg_integer()
+        }
   def database_stats do
     sql = """
     SELECT
@@ -209,6 +239,7 @@ defmodule PhoenixKitDb do
   end
 
   @doc "Lists tables + stats with pagination and search."
+  @spec list_tables(map()) :: map()
   def list_tables(opts \\ %{}) do
     page = normalize_page(Map.get(opts, :page, @default_table_page))
     per_page = normalize_page_size(Map.get(opts, :per_page, @default_table_page_size))
@@ -238,18 +269,8 @@ defmodule PhoenixKitDb do
 
     entries =
       case RepoHelper.query(list_sql, params) do
-        {:ok, %{rows: rows}} ->
-          Enum.map(rows, fn [schema, name, approx_rows, size_bytes] ->
-            %{
-              schema: schema,
-              name: name,
-              approx_rows: approx_rows,
-              size_bytes: size_bytes
-            }
-          end)
-
-        _ ->
-          []
+        {:ok, %{rows: rows}} -> Enum.map(rows, &row_to_table_entry/1)
+        _ -> []
       end
 
     total_pages = max(div_with_ceiling(total_entries, per_page), 1)
@@ -263,37 +284,53 @@ defmodule PhoenixKitDb do
     }
   end
 
+  defp row_to_table_entry([schema, name, approx_rows, size_bytes]) do
+    %{schema: schema, name: name, approx_rows: approx_rows, size_bytes: size_bytes}
+  end
+
   @doc """
   Fetches a single row by ID from a table.
-  Returns `{:ok, row_map}` or `{:error, :not_found | :invalid_id | term()}`.
+
+  Returns `{:ok, row_map}` or `{:error, :not_found | :invalid_id |
+  :invalid_identifier | term()}`. `:invalid_identifier` covers the case
+  where `schema` or `table` contains characters that can't be safely
+  quoted into SQL — this surfaces graceful "table not found" UX
+  instead of a 500.
   """
+  @spec fetch_row(identifier_string() | nil, identifier_string(), term()) ::
+          {:ok, map()} | {:error, :not_found | :invalid_id | :invalid_identifier | term()}
   def fetch_row(schema, table, row_id) when is_binary(table) do
     schema = schema || "public"
-    qualified = qualified_table(schema, table)
 
-    parsed_id = parse_row_id(row_id)
-
-    if is_nil(parsed_id) do
-      {:error, :invalid_id}
-    else
+    with {:ok, qualified} <- safe_qualified_table(schema, table),
+         id when not is_nil(id) <- parse_row_id(row_id) do
       pk_col = RepoHelper.get_pk_column(qualified)
-      sql = "SELECT * FROM #{qualified} WHERE #{quote_ident(pk_col)} = $1 LIMIT 1"
 
-      case RepoHelper.query(sql, [parsed_id]) do
-        {:ok, %{columns: columns, rows: [row]}} ->
-          row_map =
-            columns
-            |> Enum.zip(row)
-            |> Map.new()
+      case safe_quote_ident(pk_col) do
+        {:ok, quoted_pk} ->
+          fetch_row_by_pk(qualified, quoted_pk, id)
 
-          {:ok, row_map}
-
-        {:ok, %{rows: []}} ->
-          {:error, :not_found}
-
-        {:error, reason} ->
-          {:error, reason}
+        {:error, _} = err ->
+          err
       end
+    else
+      nil -> {:error, :invalid_id}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp fetch_row_by_pk(qualified, quoted_pk, id) do
+    sql = "SELECT * FROM #{qualified} WHERE #{quoted_pk} = $1 LIMIT 1"
+
+    case RepoHelper.query(sql, [id]) do
+      {:ok, %{columns: columns, rows: [row]}} ->
+        {:ok, columns |> Enum.zip(row) |> Map.new()}
+
+      {:ok, %{rows: []}} ->
+        {:error, :not_found}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -308,86 +345,104 @@ defmodule PhoenixKitDb do
 
   defp parse_row_id(_), do: nil
 
-  @doc "Returns table metadata and a row preview window."
+  @doc """
+  Returns table metadata and a row preview window.
+
+  When `schema` or `table` is malformed, returns the empty preview
+  shape rather than crashing — the LV uses this signal to render a
+  graceful "table not found" message.
+  """
+  @spec table_preview(identifier_string() | nil, identifier_string(), map()) :: map()
   def table_preview(schema, table, opts \\ %{}) when is_binary(table) do
     schema = schema || "public"
     page = normalize_page(Map.get(opts, :page, @default_row_page))
     per_page = normalize_page_size(Map.get(opts, :per_page, @default_row_page_size), 10, 200)
     search = Map.get(opts, :search, "") |> to_string()
 
-    with true <- table_exists?(schema, table),
+    with {:ok, qualified} <- safe_qualified_table(schema, table),
+         true <- table_exists?(schema, table),
          columns when is_list(columns) <- fetch_columns(schema, table) do
-      {where_clause, search_params} = row_search_clause(search, columns)
-      offset = (page - 1) * per_page
-      qualified = qualified_table(schema, table)
-
-      count_sql = "SELECT COUNT(*) FROM #{qualified} #{where_clause}"
-
-      total_rows =
-        case RepoHelper.query(count_sql, search_params) do
-          {:ok, %{rows: [[count]]}} -> count
-          _ -> 0
-        end
-
-      col_names = Enum.map(columns, & &1.name)
-
-      order_column =
-        cond do
-          "uuid" in col_names -> "uuid"
-          "id" in col_names -> "id"
-          true -> "ctid"
-        end
-
-      select_sql = """
-      SELECT * FROM #{qualified}
-      #{where_clause}
-      ORDER BY #{order_column}
-      LIMIT $#{length(search_params) + 1}
-      OFFSET $#{length(search_params) + 2}
-      """
-
-      params = search_params ++ [per_page, offset]
-
-      rows =
-        case RepoHelper.query(select_sql, params) do
-          {:ok, %{columns: sql_columns, rows: sql_rows}} ->
-            Enum.map(sql_rows, fn row ->
-              sql_columns
-              |> Enum.zip(row)
-              |> Map.new()
-            end)
-
-          _ ->
-            []
-        end
-
-      %{
-        schema: schema,
-        table: table,
-        columns: columns,
-        rows: rows,
-        row_count: total_rows,
-        page: page,
-        per_page: per_page,
-        total_pages: max(div_with_ceiling(total_rows, per_page), 1),
-        approx_rows: get_table_stat(schema, table, :approx_rows),
-        size_bytes: get_table_stat(schema, table, :size_bytes)
-      }
+      build_preview(schema, table, qualified, columns, page, per_page, search)
     else
-      _ ->
-        %{
-          schema: schema,
-          table: table,
-          columns: [],
-          rows: [],
-          row_count: 0,
-          page: page,
-          per_page: per_page,
-          total_pages: 1,
-          approx_rows: 0,
-          size_bytes: 0
-        }
+      _ -> empty_preview(schema, table, page, per_page)
     end
+  end
+
+  defp build_preview(schema, table, qualified, columns, page, per_page, search) do
+    {where_clause, search_params} = row_search_clause(search, columns)
+    offset = (page - 1) * per_page
+
+    total_rows = count_rows(qualified, where_clause, search_params)
+    order_column = pick_order_column(columns)
+
+    select_sql = """
+    SELECT * FROM #{qualified}
+    #{where_clause}
+    ORDER BY #{order_column}
+    LIMIT $#{length(search_params) + 1}
+    OFFSET $#{length(search_params) + 2}
+    """
+
+    params = search_params ++ [per_page, offset]
+    rows = fetch_preview_rows(select_sql, params)
+
+    %{
+      schema: schema,
+      table: table,
+      columns: columns,
+      rows: rows,
+      row_count: total_rows,
+      page: page,
+      per_page: per_page,
+      total_pages: max(div_with_ceiling(total_rows, per_page), 1),
+      approx_rows: get_table_stat(schema, table, :approx_rows),
+      size_bytes: get_table_stat(schema, table, :size_bytes)
+    }
+  end
+
+  defp empty_preview(schema, table, page, per_page) do
+    %{
+      schema: schema,
+      table: table,
+      columns: [],
+      rows: [],
+      row_count: 0,
+      page: page,
+      per_page: per_page,
+      total_pages: 1,
+      approx_rows: 0,
+      size_bytes: 0
+    }
+  end
+
+  defp count_rows(qualified, where_clause, search_params) do
+    sql = "SELECT COUNT(*) FROM #{qualified} #{where_clause}"
+
+    case RepoHelper.query(sql, search_params) do
+      {:ok, %{rows: [[count]]}} -> count
+      _ -> 0
+    end
+  end
+
+  defp pick_order_column(columns) do
+    col_names = Enum.map(columns, & &1.name)
+
+    cond do
+      "uuid" in col_names -> "uuid"
+      "id" in col_names -> "id"
+      true -> "ctid"
+    end
+  end
+
+  defp fetch_preview_rows(select_sql, params) do
+    case RepoHelper.query(select_sql, params) do
+      {:ok, %{columns: cols, rows: rows}} -> materialise_rows(cols, rows)
+      _ -> []
+    end
+  end
+
+  defp materialise_rows(columns, rows) do
+    Enum.map(rows, fn row -> columns |> Enum.zip(row) |> Map.new() end)
   end
 
   defp fetch_columns(schema, table) do
@@ -399,19 +454,18 @@ defmodule PhoenixKitDb do
     """
 
     case RepoHelper.query(sql, [schema, table]) do
-      {:ok, %{rows: rows}} ->
-        Enum.map(rows, fn [name, data_type, nullable, position] ->
-          %{
-            name: name,
-            data_type: data_type,
-            nullable: nullable == "YES",
-            ordinal_position: position
-          }
-        end)
-
-      _ ->
-        []
+      {:ok, %{rows: rows}} -> Enum.map(rows, &row_to_column/1)
+      _ -> []
     end
+  end
+
+  defp row_to_column([name, data_type, nullable, position]) do
+    %{
+      name: name,
+      data_type: data_type,
+      nullable: nullable == "YES",
+      ordinal_position: position
+    }
   end
 
   defp table_exists?(schema, table) do
@@ -447,15 +501,35 @@ defmodule PhoenixKitDb do
     end
   end
 
-  defp qualified_table(schema, table) do
-    Enum.map_join([schema, table], ".", &quote_ident/1)
+  # Returns `{:ok, "\"schema\".\"table\""}` when both identifiers are
+  # safe to quote, `{:error, :invalid_identifier}` otherwise. Wrapping
+  # the previously-raise-on-bad-input `quote_ident/1` in a tuple-shape
+  # API lets callers (LV mounts, `fetch_row/3`) render a graceful
+  # "table not found" message instead of bubbling `ArgumentError` into
+  # a 500 page.
+  defp safe_qualified_table(schema, table) do
+    with {:ok, s} <- safe_quote_ident(schema),
+         {:ok, t} <- safe_quote_ident(table) do
+      {:ok, "#{s}.#{t}"}
+    end
   end
 
-  defp quote_ident(name) when is_binary(name) do
+  defp safe_quote_ident(name) when is_binary(name) do
     if Regex.match?(~r/^[a-zA-Z0-9_]+$/, name) do
-      ~s("#{name}")
+      {:ok, ~s("#{name}")}
     else
-      raise ArgumentError, "invalid identifier: #{inspect(name)}"
+      {:error, :invalid_identifier}
+    end
+  end
+
+  defp safe_quote_ident(_), do: {:error, :invalid_identifier}
+
+  # Internal-only — every call site lives in this module and passes
+  # validated identifiers (via `safe_quote_ident/1` upstream).
+  defp quote_ident!(name) do
+    case safe_quote_ident(name) do
+      {:ok, quoted} -> quoted
+      {:error, _} -> raise ArgumentError, "invalid identifier: #{inspect(name)}"
     end
   end
 
@@ -483,7 +557,7 @@ defmodule PhoenixKitDb do
         text_columns
         |> Enum.with_index(1)
         |> Enum.map(fn {column, idx} ->
-          "CAST(#{quote_ident(column.name)} AS TEXT) ILIKE $#{idx}"
+          "CAST(#{quote_ident!(column.name)} AS TEXT) ILIKE $#{idx}"
         end)
 
       {
@@ -537,36 +611,46 @@ defmodule PhoenixKitDb do
   # ============================================================================
 
   @doc """
-  Ensures the notification function exists and creates a trigger on the table.
+  Ensures the notification function exists and creates a trigger on
+  the table.
 
-  This sets up PostgreSQL `LISTEN/NOTIFY` for live updates. The trigger fires
-  on `INSERT`, `UPDATE`, or `DELETE` and sends a notification to the
-  `phoenix_kit_db_changes` channel.
+  Idempotent. A concurrent caller racing to create the same trigger
+  surfaces as `:ok` rather than an error — the win condition is "the
+  trigger exists", and Postgres' `duplicate_object` reply on the loser
+  is folded back into success.
 
-  Returns `:ok` on success or `{:error, reason}` on failure.
+  Returns `:ok` on success, `{:error, :invalid_identifier}` if the
+  schema/table contain unsafe characters, or `{:error, reason}` on a
+  Postgres error.
   """
+  @spec ensure_trigger(identifier_string(), identifier_string()) ::
+          :ok | {:error, :invalid_identifier | term()}
   def ensure_trigger(schema, table) do
-    with :ok <- ensure_notify_function() do
+    with {:ok, _qualified} <- safe_qualified_table(schema, table),
+         :ok <- ensure_notify_function() do
       create_table_trigger(schema, table)
     end
   end
 
   @doc "Removes the notification trigger from a table."
+  @spec remove_trigger(identifier_string(), identifier_string()) ::
+          :ok | {:error, :invalid_identifier | term()}
   def remove_trigger(schema, table) do
-    trigger_name = trigger_name(schema, table)
-    qualified = qualified_table(schema, table)
+    with {:ok, qualified} <- safe_qualified_table(schema, table) do
+      trigger = trigger_name(schema, table)
+      sql = "DROP TRIGGER IF EXISTS #{trigger} ON #{qualified}"
 
-    sql = "DROP TRIGGER IF EXISTS #{trigger_name} ON #{qualified}"
-
-    case RepoHelper.query(sql) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, reason}
+      case RepoHelper.query(sql) do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
   @doc "Whether a table has a notification trigger installed."
+  @spec has_trigger?(identifier_string(), identifier_string()) :: boolean()
   def has_trigger?(schema, table) do
-    trigger_name = trigger_name(schema, table)
+    trigger = trigger_name(schema, table)
 
     sql = """
     SELECT EXISTS (
@@ -577,14 +661,17 @@ defmodule PhoenixKitDb do
     )
     """
 
-    case RepoHelper.query(sql, [schema, table, trigger_name]) do
+    case RepoHelper.query(sql, [schema, table, trigger]) do
       {:ok, %{rows: [[true]]}} -> true
       _ -> false
     end
   end
 
   @doc "Lists all tables that have notification triggers installed."
+  @spec list_triggered_tables() :: [{String.t(), String.t()}]
   def list_triggered_tables do
+    # @trigger_prefix is a hardcoded module attribute — not user input —
+    # so direct interpolation into a LIKE pattern is safe by construction.
     sql = """
     SELECT trigger_schema, event_object_table
     FROM information_schema.triggers
@@ -594,21 +681,21 @@ defmodule PhoenixKitDb do
     """
 
     case RepoHelper.query(sql) do
-      {:ok, %{rows: rows}} ->
-        Enum.map(rows, fn [schema, table] -> {schema, table} end)
-
-      _ ->
-        []
+      {:ok, %{rows: rows}} -> Enum.map(rows, fn [schema, table] -> {schema, table} end)
+      _ -> []
     end
   end
 
   @doc "Removes all notification triggers from all tables."
+  @spec remove_all_triggers() :: :ok
   def remove_all_triggers do
-    list_triggered_tables()
-    |> Enum.each(fn {schema, table} -> remove_trigger(schema, table) end)
+    Enum.each(list_triggered_tables(), fn {schema, table} ->
+      remove_trigger(schema, table)
+    end)
   end
 
-  @doc "Returns the PubSub channel used for `LISTEN/NOTIFY`."
+  @doc false
+  @spec notify_channel() :: String.t()
   def notify_channel, do: @notify_channel
 
   defp ensure_notify_function do
@@ -661,29 +748,73 @@ defmodule PhoenixKitDb do
   end
 
   defp create_table_trigger(schema, table) do
-    trigger_name = trigger_name(schema, table)
-    qualified = qualified_table(schema, table)
-
     if has_trigger?(schema, table) do
       :ok
     else
-      sql = """
-      CREATE TRIGGER #{trigger_name}
-      AFTER INSERT OR UPDATE OR DELETE ON #{qualified}
-      FOR EACH ROW
-      EXECUTE FUNCTION #{@notify_function_name}();
-      """
-
-      case RepoHelper.query(sql) do
-        {:ok, _} -> :ok
-        {:error, reason} -> {:error, reason}
-      end
+      do_create_trigger(schema, table)
     end
+  end
+
+  defp do_create_trigger(schema, table) do
+    trigger = trigger_name(schema, table)
+    qualified = qualified_table(schema, table)
+
+    sql = """
+    CREATE TRIGGER #{trigger}
+    AFTER INSERT OR UPDATE OR DELETE ON #{qualified}
+    FOR EACH ROW
+    EXECUTE FUNCTION #{@notify_function_name}();
+    """
+
+    case RepoHelper.query(sql) do
+      {:ok, _} ->
+        :ok
+
+      # Concurrent ensure_trigger lost the race — the trigger is now present,
+      # which is what we wanted. Return :ok rather than propagate.
+      {:error, %Postgrex.Error{postgres: %{code: :duplicate_object}}} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp qualified_table(schema, table) do
+    "#{quote_ident!(schema)}.#{quote_ident!(table)}"
   end
 
   defp trigger_name(schema, table) do
     safe_schema = String.replace(schema, ~r/[^a-zA-Z0-9_]/, "_")
     safe_table = String.replace(table, ~r/[^a-zA-Z0-9_]/, "_")
     "#{@trigger_prefix}#{safe_schema}_#{safe_table}"
+  end
+
+  # ============================================================================
+  # Activity logging
+  # ============================================================================
+
+  defp log_module_toggle(state) when state in [:enabled, :disabled] do
+    if Code.ensure_loaded?(PhoenixKit.Activity) do
+      PhoenixKit.Activity.log(%{
+        action: "db.module_#{state}",
+        module: module_key(),
+        mode: "manual",
+        resource_type: "module",
+        metadata: %{}
+      })
+    end
+  rescue
+    Postgrex.Error ->
+      :ok
+
+    DBConnection.OwnershipError ->
+      :ok
+
+    e ->
+      Logger.warning("[PhoenixKitDb] Activity logging error: #{Exception.message(e)}")
+      {:error, e}
+  catch
+    :exit, _reason -> :ok
   end
 end

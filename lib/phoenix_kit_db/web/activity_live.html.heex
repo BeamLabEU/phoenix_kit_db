@@ -4,14 +4,16 @@
         <div class={"w-3 h-3 rounded-full #{if @paused, do: "bg-warning", else: "bg-success animate-pulse"}"}>
         </div>
         <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">
-          Live Database Activity
+          {Gettext.gettext(PhoenixKitWeb.Gettext, "Live Database Activity")}
         </h1>
       </div>
       <p class="text-sm text-base-content/60 mt-0.5">
         <%= if @paused do %>
-          Paused - {length(@activity_log)} events captured
+          {Gettext.gettext(PhoenixKitWeb.Gettext, "Paused — %{count} events captured",
+            count: length(@activity_log)
+          )}
         <% else %>
-          Monitoring all tables in real-time
+          {Gettext.gettext(PhoenixKitWeb.Gettext, "Monitoring all tables in real-time")}
         <% end %>
       </p>
     </.admin_page_header>
@@ -23,13 +25,13 @@
         class={"btn btn-sm #{if @paused, do: "btn-warning", else: "btn-ghost"}"}
       >
         <%= if @paused do %>
-          <.icon name="hero-play" class="w-4 h-4 mr-2" /> Resume
+          <.icon name="hero-play" class="w-4 h-4 mr-2" /> {Gettext.gettext(PhoenixKitWeb.Gettext, "Resume")}
         <% else %>
-          <.icon name="hero-pause" class="w-4 h-4 mr-2" /> Pause
+          <.icon name="hero-pause" class="w-4 h-4 mr-2" /> {Gettext.gettext(PhoenixKitWeb.Gettext, "Pause")}
         <% end %>
       </button>
       <button phx-click="clear_log" class="btn btn-ghost btn-sm">
-        <.icon name="hero-trash" class="w-4 h-4 mr-2" /> Clear
+        <.icon name="hero-trash" class="w-4 h-4 mr-2" /> {Gettext.gettext(PhoenixKitWeb.Gettext, "Clear")}
       </button>
     </div>
 
@@ -38,14 +40,14 @@
       <div class="flex flex-col gap-2">
         <div class="form-control">
           <label class="label py-0">
-            <span class="label-text text-xs">Table</span>
+            <span class="label-text text-xs">{Gettext.gettext(PhoenixKitWeb.Gettext, "Table")}</span>
           </label>
           <label class="select select-sm w-56">
             <select
               name="table"
               phx-change="filter_table"
             >
-              <option value="">All tables</option>
+              <option value="">{Gettext.gettext(PhoenixKitWeb.Gettext, "All tables")}</option>
               <%= for table <- @tables do %>
                 <option value={table} selected={@filter_table == table}>{table}</option>
               <% end %>
@@ -54,14 +56,14 @@
         </div>
         <div class="form-control">
           <label class="label py-0">
-            <span class="label-text text-xs">Operation</span>
+            <span class="label-text text-xs">{Gettext.gettext(PhoenixKitWeb.Gettext, "Operation")}</span>
           </label>
           <label class="select select-sm w-56">
             <select
               name="operation"
               phx-change="filter_operation"
             >
-              <option value="">All</option>
+              <option value="">{Gettext.gettext(PhoenixKitWeb.Gettext, "All")}</option>
               <option value="INSERT" selected={@filter_operation == "INSERT"}>INSERT</option>
               <option value="UPDATE" selected={@filter_operation == "UPDATE"}>UPDATE</option>
               <option value="DELETE" selected={@filter_operation == "DELETE"}>DELETE</option>
@@ -71,7 +73,12 @@
       </div>
       <div class="flex-1"></div>
       <div class="text-sm text-base-content/70 self-end">
-        {length(@activity_log)} events
+        {length(@activity_log)} {Gettext.ngettext(
+          PhoenixKitWeb.Gettext,
+          "event",
+          "events",
+          length(@activity_log)
+        )}
       </div>
     </div>
 
@@ -80,9 +87,14 @@
       <%= if Enum.empty?(@activity_log) do %>
         <div class="p-12 text-center text-base-content/50">
           <.icon name="hero-signal" class="w-12 h-12 mx-auto mb-4 opacity-30" />
-          <p class="text-lg font-medium">Waiting for database activity...</p>
+          <p class="text-lg font-medium">
+            {Gettext.gettext(PhoenixKitWeb.Gettext, "Waiting for database activity...")}
+          </p>
           <p class="text-sm mt-2">
-            INSERT, UPDATE, and DELETE operations will appear here in real-time
+            {Gettext.gettext(
+              PhoenixKitWeb.Gettext,
+              "INSERT, UPDATE, and DELETE operations will appear here in real-time"
+            )}
           </p>
         </div>
       <% else %>
@@ -101,7 +113,9 @@
                   {entry.schema}.{entry.table}
                 </.link>
                 <%= if entry.row_id do %>
-                  <span class="badge badge-outline badge-sm h-auto">id: {entry.row_id}</span>
+                  <span class="badge badge-outline badge-sm h-auto">
+                    {Gettext.gettext(PhoenixKitWeb.Gettext, "id:")} {entry.row_id}
+                  </span>
                 <% end %>
                 <span class="text-xs text-base-content/50 ml-auto font-mono">
                   {Calendar.strftime(entry.timestamp, "%Y-%m-%d %H:%M:%S")}
@@ -118,16 +132,16 @@
                           <td class="font-mono text-xs text-base-content/70 w-40 align-top py-1">
                             {key}
                             <%= if key_new?(entry, key) do %>
-                              <span class="badge badge-success badge-xs ml-1">new</span>
+                              <span class="badge badge-success badge-xs ml-1">{Gettext.gettext(PhoenixKitWeb.Gettext, "new")}</span>
                             <% end %>
                             <%= if key_changed?(entry, key) do %>
-                              <span class="badge badge-warning badge-xs ml-1">changed</span>
+                              <span class="badge badge-warning badge-xs ml-1">{Gettext.gettext(PhoenixKitWeb.Gettext, "changed")}</span>
                             <% end %>
                           </td>
                           <td class="font-mono text-xs py-1 break-all">
                             <%= cond do %>
                               <% is_nil(value) -> %>
-                                <span class="text-base-content/40 italic">null</span>
+                                <span class="text-base-content/40 italic">{Gettext.gettext(PhoenixKitWeb.Gettext, "null")}</span>
                               <% is_map(value) or is_list(value) -> %>
                                 <details>
                                   <summary class="cursor-pointer text-primary">
@@ -154,13 +168,13 @@
               <% else %>
                 <%= if entry.operation == "DELETE" do %>
                   <div class="text-sm text-base-content/50 italic">
-                    Row deleted (data not available)
+                    {Gettext.gettext(PhoenixKitWeb.Gettext, "Row deleted (data not available)")}
                   </div>
                 <% else %>
                   <div class="text-sm text-base-content/50 italic">
-                    Row data not available
+                    {Gettext.gettext(PhoenixKitWeb.Gettext, "Row data not available")}
                     <%= if is_nil(entry.row_id) do %>
-                      (table may not have an 'id' column)
+                      {Gettext.gettext(PhoenixKitWeb.Gettext, "(table may not have an 'id' column)")}
                     <% end %>
                   </div>
                 <% end %>
@@ -171,4 +185,3 @@
       <% end %>
     </div>
   </div>
-

@@ -4,8 +4,12 @@
         {@schema}.{@table}
       </h1>
       <p class="text-sm text-base-content/60 mt-0.5">
-        <.formatted_number number={@preview.approx_rows} format={:short} /> rows •
-        <.file_size bytes={@preview.size_bytes} />
+        <.formatted_number number={@preview.approx_rows} format={:short} /> {Gettext.ngettext(
+          PhoenixKitWeb.Gettext,
+          "row",
+          "rows",
+          @preview.approx_rows
+        )} • <.file_size bytes={@preview.size_bytes} />
       </p>
     </.admin_page_header>
 
@@ -15,7 +19,10 @@
         navigate={"#{PhoenixKitDb.Paths.activity()}?table=#{@schema}.#{@table}"}
         class="btn btn-ghost btn-sm"
       >
-        <.icon name="hero-signal" class="w-4 h-4 mr-2" /> Live Activity
+        <.icon name="hero-signal" class="w-4 h-4 mr-2" /> {Gettext.gettext(
+          PhoenixKitWeb.Gettext,
+          "Live Activity"
+        )}
       </.link>
     </div>
 
@@ -23,10 +30,15 @@
       <div class="p-4 border-b border-base-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div class="flex items-center gap-4">
           <span class="text-sm text-base-content/70">
-            {@preview.row_count} rows total
+            {@preview.row_count} {Gettext.ngettext(
+              PhoenixKitWeb.Gettext,
+              "row total",
+              "rows total",
+              @preview.row_count
+            )}
           </span>
           <.form for={%{}} phx-change="set_per_page" class="flex items-center gap-2">
-            <span class="text-sm text-base-content/70">Show</span>
+            <span class="text-sm text-base-content/70">{Gettext.gettext(PhoenixKitWeb.Gettext, "Show")}</span>
             <label class="select select-sm w-20">
               <select name="per_page">
                 <%= for option <- [10, 20, 50, 100, 200] do %>
@@ -34,7 +46,7 @@
                 <% end %>
               </select>
             </label>
-            <span class="text-sm text-base-content/70">per page</span>
+            <span class="text-sm text-base-content/70">{Gettext.gettext(PhoenixKitWeb.Gettext, "per page")}</span>
           </.form>
         </div>
         <div class="flex items-center gap-2">
@@ -44,7 +56,7 @@
               phx-click="change_page"
               phx-value-page="1"
               disabled={@preview.page <= 1}
-              title="First page"
+              title={Gettext.gettext(PhoenixKitWeb.Gettext, "First page")}
             >
               <.icon name="hero-chevron-double-left" class="w-4 h-4" />
             </button>
@@ -53,19 +65,22 @@
               phx-click="change_page"
               phx-value-page={@preview.page - 1}
               disabled={@preview.page <= 1}
-              title="Previous page"
+              title={Gettext.gettext(PhoenixKitWeb.Gettext, "Previous page")}
             >
               <.icon name="hero-chevron-left" class="w-4 h-4" />
             </button>
             <span class="join-item btn btn-sm btn-disabled !text-base-content">
-              Page {@preview.page} of {@preview.total_pages}
+              {Gettext.gettext(PhoenixKitWeb.Gettext, "Page %{page} of %{total}",
+                page: @preview.page,
+                total: @preview.total_pages
+              )}
             </span>
             <button
               class="join-item btn btn-sm"
               phx-click="change_page"
               phx-value-page={@preview.page + 1}
               disabled={@preview.page >= @preview.total_pages}
-              title="Next page"
+              title={Gettext.gettext(PhoenixKitWeb.Gettext, "Next page")}
             >
               <.icon name="hero-chevron-right" class="w-4 h-4" />
             </button>
@@ -74,7 +89,7 @@
               phx-click="change_page"
               phx-value-page={@preview.total_pages}
               disabled={@preview.page >= @preview.total_pages}
-              title="Last page"
+              title={Gettext.gettext(PhoenixKitWeb.Gettext, "Last page")}
             >
               <.icon name="hero-chevron-double-right" class="w-4 h-4" />
             </button>
@@ -110,7 +125,7 @@
                       colspan={length(@preview.columns)}
                       class="text-center !py-8 text-base-content/70"
                     >
-                      No rows found.
+                      {Gettext.gettext(PhoenixKitWeb.Gettext, "No rows found.")}
                     </td>
                   </tr>
                 <% else %>
@@ -391,4 +406,3 @@
       };
     })();
   </script>
-

@@ -1,20 +1,21 @@
 defmodule PhoenixKitDb.Listener do
   @moduledoc """
-  GenServer that listens for PostgreSQL `NOTIFY` events for live table updates.
+  GenServer that listens for PostgreSQL `NOTIFY` events for live table
+  updates.
 
-  Holds a separate `Postgrex.Notifications` connection (auto-reconnect on
-  drop) on the `phoenix_kit_db_changes` channel. When a notification
-  arrives, it broadcasts via `PhoenixKit.PubSub.Manager` so LiveViews can
+  Holds a separate `Postgrex.Notifications` connection (auto-reconnect
+  on drop) on the `phoenix_kit_db_changes` channel. When a notification
+  arrives it broadcasts via `PhoenixKitDb.PubSub` so LiveViews can
   react in real time.
 
   Started via the `PhoenixKit.Module.children/0` callback on
-  `PhoenixKitDb`, which the host's `PhoenixKit.Supervisor` consumes when
-  the module is enabled.
+  `PhoenixKitDb`, which the host's `PhoenixKit.Supervisor` consumes
+  when the module is enabled.
   """
 
   use GenServer
 
-  alias PhoenixKit.PubSub.Manager, as: PubSubManager
+  alias PhoenixKitDb.PubSub
 
   require Logger
 
@@ -23,16 +24,19 @@ defmodule PhoenixKitDb.Listener do
   # ── Client API ───────────────────────────────────────────────────
 
   @doc "Starts the listener process."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @doc """
-  Ensures the Listener is started. Called automatically by subscribe
-  functions. The Listener is normally started by `PhoenixKit.Supervisor`
-  via this module's `children/0` callback. This function is a safety
-  check that logs a warning if the Listener isn't running.
+  Ensures the Listener is started. Called automatically by the
+  subscribe helpers. The Listener is normally started by
+  `PhoenixKit.Supervisor` via this module's `children/0` callback;
+  this function logs a warning if it isn't running so a missed startup
+  is observable rather than silent.
   """
+  @spec ensure_started() :: :ok
   def ensure_started do
     case Process.whereis(__MODULE__) do
       nil ->
@@ -49,85 +53,77 @@ defmodule PhoenixKitDb.Listener do
   end
 
   @doc "Subscribe to changes for a specific table."
+  @spec subscribe(String.t(), String.t()) :: :ok | {:error, term()}
   def subscribe(schema, table) do
     ensure_started()
-    PubSubManager.subscribe(topic(schema, table))
+    PubSub.subscribe(PubSub.topic_table(schema, table))
   end
 
   @doc "Unsubscribe from changes for a specific table."
+  @spec unsubscribe(String.t(), String.t()) :: :ok | {:error, term()}
   def unsubscribe(schema, table) do
-    PubSubManager.unsubscribe(topic(schema, table))
+    PubSub.unsubscribe(PubSub.topic_table(schema, table))
   end
 
-  @doc "Subscribe to all table changes (for the index / activity pages)."
+  @doc "Subscribe to all table changes (Index + Activity pages)."
+  @spec subscribe_all() :: :ok | {:error, term()}
   def subscribe_all do
     ensure_started()
-    PubSubManager.subscribe("phoenix_kit_db:all")
+    PubSub.subscribe(PubSub.topic_all())
   end
 
   @doc "Unsubscribe from all table changes."
+  @spec unsubscribe_all() :: :ok | {:error, term()}
   def unsubscribe_all do
-    PubSubManager.unsubscribe("phoenix_kit_db:all")
+    PubSub.unsubscribe(PubSub.topic_all())
   end
 
   # ── Server callbacks ─────────────────────────────────────────────
 
   @impl true
   def init(_opts) do
-    case get_connection_config() do
-      {:ok, config} ->
-        case Postgrex.Notifications.start_link(config) do
-          {:ok, pid} ->
-            case Postgrex.Notifications.listen(pid, @channel) do
-              {:ok, _ref} ->
-                {:ok, %{conn: pid}}
+    with {:ok, config} <- get_connection_config(),
+         {:ok, pid} <- Postgrex.Notifications.start_link(config) do
+      case Postgrex.Notifications.listen(pid, @channel) do
+        {:ok, _ref} ->
+          {:ok, %{conn: pid}}
 
-              {:eventually, _ref} ->
-                # auto_reconnect: connection not yet established, will activate later
-                {:ok, %{conn: pid}}
+        # auto_reconnect: connection not yet established, will activate later.
+        {:eventually, _ref} ->
+          {:ok, %{conn: pid}}
 
-              {:error, reason} ->
-                Logger.warning("PhoenixKitDb.Listener failed to LISTEN: #{inspect(reason)}")
-                {:ok, %{conn: nil}}
-            end
-
-          {:error, reason} ->
-            Logger.warning("PhoenixKitDb.Listener failed to connect: #{inspect(reason)}")
-            {:ok, %{conn: nil}}
-        end
-
+        {:error, reason} ->
+          Logger.warning("PhoenixKitDb.Listener failed to LISTEN: #{inspect(reason)}")
+          {:ok, %{conn: nil}}
+      end
+    else
       {:error, reason} ->
-        Logger.warning("PhoenixKitDb.Listener could not get DB config: #{inspect(reason)}")
+        Logger.warning("PhoenixKitDb.Listener failed to start: #{inspect(reason)}")
         {:ok, %{conn: nil}}
     end
   end
 
   @impl true
   def handle_info({:notification, _conn, _ref, @channel, payload}, state) do
-    # Payload format: "schema.table:OPERATION:row_id" (e.g., "public.users:INSERT:123")
     case parse_payload(payload) do
       {schema, table, operation, row_id} ->
-        Logger.info(
-          "PhoenixKitDb: #{schema}.#{table} - #{operation} (id: #{row_id || "n/a"})"
-        )
+        Logger.info("PhoenixKitDb: #{schema}.#{table} - #{operation} (id: #{row_id || "n/a"})")
 
         message = {:table_changed, schema, table, operation, row_id}
 
-        # Broadcast to specific table subscribers
-        PubSubManager.broadcast(topic(schema, table), message)
-
-        # Broadcast to "all tables" subscribers (for index/activity pages)
-        PubSubManager.broadcast("phoenix_kit_db:all", message)
+        PubSub.broadcast(PubSub.topic_table(schema, table), message)
+        PubSub.broadcast(PubSub.topic_all(), message)
 
       :error ->
-        Logger.warning("PhoenixKitDb: Invalid notification payload: #{payload}")
+        Logger.warning("PhoenixKitDb: Invalid notification payload: #{inspect(payload)}")
     end
 
     {:noreply, state}
   end
 
   @impl true
-  def handle_info(_msg, state) do
+  def handle_info(msg, state) do
+    Logger.debug("[#{inspect(__MODULE__)}] Unhandled info: #{inspect(msg)}")
     {:noreply, state}
   end
 
@@ -141,39 +137,22 @@ defmodule PhoenixKitDb.Listener do
 
   # ── Private ──────────────────────────────────────────────────────
 
+  # Trigger function payload format (set by db.ex's notify function):
+  #   "schema.table:OPERATION:row_id"
+  # The schema/table half always splits on ".", parts: 2; the operation
+  # is one of {INSERT, UPDATE, DELETE}; row_id is the row's `uuid` or
+  # `id` cast to TEXT, or "" when the table has neither column.
   defp parse_payload(payload) do
-    case String.split(payload, ":") do
-      # New format: schema.table:OPERATION:row_id
-      [table_part, operation, row_id] ->
-        case String.split(table_part, ".", parts: 2) do
-          [schema, table] ->
-            parsed_id = if row_id == "", do: nil, else: row_id
-            {schema, table, operation, parsed_id}
-
-          _ ->
-            :error
-        end
-
-      # Legacy format: schema.table:OPERATION (backwards compat)
-      [table_part, operation] ->
-        case String.split(table_part, ".", parts: 2) do
-          [schema, table] -> {schema, table, operation, nil}
-          _ -> :error
-        end
-
-      # Very old format without operation (backwards compat)
-      [table_part] ->
-        case String.split(table_part, ".", parts: 2) do
-          [schema, table] -> {schema, table, "UNKNOWN", nil}
-          _ -> :error
-        end
-
-      _ ->
-        :error
+    with [table_part, operation, row_id] <- String.split(payload, ":"),
+         [schema, table] <- String.split(table_part, ".", parts: 2) do
+      {schema, table, operation, normalize_row_id(row_id)}
+    else
+      _ -> :error
     end
   end
 
-  defp topic(schema, table), do: "phoenix_kit_db:#{schema}.#{table}"
+  defp normalize_row_id(""), do: nil
+  defp normalize_row_id(id), do: id
 
   defp get_connection_config do
     case PhoenixKit.RepoHelper.repo() do
@@ -183,8 +162,8 @@ defmodule PhoenixKitDb.Listener do
       repo ->
         config = repo.config()
 
-        # Build Postgrex-compatible config from the host repo's settings.
-        # Include socket/socket_dir for local connections, and SSL options.
+        # Postgrex-compatible config from the host repo's settings.
+        # Local sockets and SSL options pass through.
         postgrex_config =
           config
           |> Keyword.take([

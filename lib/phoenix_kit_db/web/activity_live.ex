@@ -31,7 +31,7 @@ defmodule PhoenixKitDb.Web.ActivityLive do
 
     socket =
       socket
-      |> assign(:page_title, "Live Activity")
+      |> assign(:page_title, Gettext.gettext(PhoenixKitWeb.Gettext, "Live Activity"))
       |> assign(:activity_log, [])
       |> assign(:paused, false)
       |> assign(:filter_table, initial_table_filter)
@@ -98,65 +98,65 @@ defmodule PhoenixKitDb.Web.ActivityLive do
 
   defp add_activity_entry(socket, schema, table, operation, row_id) do
     if matches_filters?(socket, schema, table, operation) do
-      timestamp = UtilsDate.utc_now()
-      row_key = {schema, table, row_id}
-
-      row_data =
-        if operation in ["INSERT", "UPDATE"] and row_id do
-          case PhoenixKitDb.fetch_row(schema, table, row_id) do
-            {:ok, row} -> row
-            _ -> nil
-          end
-        else
-          nil
-        end
-
-      previous_state = Map.get(socket.assigns.row_states, row_key)
-
-      {changed_keys, new_keys} =
-        if row_data && previous_state do
-          compute_diff(previous_state, row_data)
-        else
-          {MapSet.new(), MapSet.new()}
-        end
-
-      new_keys =
-        if operation == "INSERT" && row_data do
-          row_data |> Map.keys() |> MapSet.new()
-        else
-          new_keys
-        end
-
-      entry = %{
-        id: System.unique_integer([:positive]),
-        timestamp: timestamp,
-        schema: schema,
-        table: table,
-        operation: operation,
-        row_id: row_id,
-        row_data: row_data,
-        changed_keys: changed_keys,
-        new_keys: new_keys
-      }
-
-      row_states =
-        if row_data && row_id do
-          Map.put(socket.assigns.row_states, row_key, row_data)
-        else
-          socket.assigns.row_states
-        end
-
-      activity_log =
-        [entry | socket.assigns.activity_log]
-        |> Enum.take(100)
-
-      socket
-      |> assign(:activity_log, activity_log)
-      |> assign(:row_states, row_states)
+      append_activity_entry(socket, schema, table, operation, row_id)
     else
       socket
     end
   end
+
+  defp append_activity_entry(socket, schema, table, operation, row_id) do
+    row_key = {schema, table, row_id}
+    row_data = fetch_row_data(schema, table, operation, row_id)
+    previous_state = Map.get(socket.assigns.row_states, row_key)
+    {changed_keys, new_keys} = compute_keys(operation, row_data, previous_state)
+
+    entry = %{
+      id: System.unique_integer([:positive]),
+      timestamp: UtilsDate.utc_now(),
+      schema: schema,
+      table: table,
+      operation: operation,
+      row_id: row_id,
+      row_data: row_data,
+      changed_keys: changed_keys,
+      new_keys: new_keys
+    }
+
+    row_states = update_row_states(socket.assigns.row_states, row_key, row_data, row_id)
+    activity_log = [entry | socket.assigns.activity_log] |> Enum.take(100)
+
+    socket
+    |> assign(:activity_log, activity_log)
+    |> assign(:row_states, row_states)
+  end
+
+  defp fetch_row_data(_schema, _table, op, _row_id) when op not in ["INSERT", "UPDATE"], do: nil
+  defp fetch_row_data(_schema, _table, _op, nil), do: nil
+
+  defp fetch_row_data(schema, table, _op, row_id) do
+    case PhoenixKitDb.fetch_row(schema, table, row_id) do
+      {:ok, row} -> row
+      _ -> nil
+    end
+  end
+
+  defp compute_keys(_operation, nil, _previous), do: {MapSet.new(), MapSet.new()}
+
+  defp compute_keys("INSERT", row_data, _previous) do
+    {MapSet.new(), row_data |> Map.keys() |> MapSet.new()}
+  end
+
+  defp compute_keys(_op, _row_data, nil), do: {MapSet.new(), MapSet.new()}
+
+  defp compute_keys(_op, row_data, previous_state) do
+    compute_diff(previous_state, row_data)
+  end
+
+  defp update_row_states(states, _row_key, nil, _row_id), do: states
+  defp update_row_states(states, _row_key, _row_data, nil), do: states
+
+  defp update_row_states(states, row_key, row_data, _row_id),
+    do: Map.put(states, row_key, row_data)
 
   defp compute_diff(previous, current) do
     all_keys = MapSet.union(MapSet.new(Map.keys(previous)), MapSet.new(Map.keys(current)))

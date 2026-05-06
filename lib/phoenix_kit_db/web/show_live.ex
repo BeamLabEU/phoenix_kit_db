@@ -20,25 +20,42 @@ defmodule PhoenixKitDb.Web.ShowLive do
     page = parse_page(params["page"])
     per_page = parse_per_page(params["per_page"])
 
-    if connected?(socket) do
-      # Subscribe to changes for this table and lazily install the trigger.
-      Listener.subscribe(schema, table)
-      PhoenixKitDb.ensure_trigger(schema, table)
-    end
-
     preview = PhoenixKitDb.table_preview(schema, table, %{page: page, per_page: per_page})
 
-    socket =
-      socket
-      |> assign(:page_title, "#{schema}.#{table}")
-      |> assign(:schema, schema)
-      |> assign(:table, table)
-      |> assign(:per_page, per_page)
-      |> assign(:preview, preview)
-      |> assign(:highlighted_rows, [])
-      |> assign(:refresh_scheduled, false)
+    if preview.columns == [] do
+      # Either the schema/table contains unsafe characters, or the
+      # table doesn't exist. Bail to /admin/db with a flash rather than
+      # render an empty grid.
+      {:ok,
+       socket
+       |> put_flash(
+         :error,
+         Gettext.gettext(PhoenixKitWeb.Gettext, "Table %{schema}.%{table} not found",
+           schema: schema,
+           table: table
+         )
+       )
+       |> push_navigate(to: PhoenixKitDb.Paths.index())}
+    else
+      if connected?(socket) do
+        # Subscribe to changes for this table and lazily install the trigger.
+        Listener.subscribe(schema, table)
+        PhoenixKitDb.ensure_trigger(schema, table)
+      end
 
-    {:ok, socket}
+      socket =
+        socket
+        |> assign(:page_title, "#{schema}.#{table}")
+        # ^ schema/table are programmatic identifiers — not translatable.
+        |> assign(:schema, schema)
+        |> assign(:table, table)
+        |> assign(:per_page, per_page)
+        |> assign(:preview, preview)
+        |> assign(:highlighted_rows, [])
+        |> assign(:refresh_scheduled, false)
+
+      {:ok, socket}
+    end
   end
 
   @impl true
@@ -239,35 +256,52 @@ defmodule PhoenixKitDb.Web.ShowLive do
   defp add_change_notification(socket, 0, 0, false), do: socket
 
   defp add_change_notification(socket, added, removed, changed_on_page) do
-    messages = []
-
     messages =
-      if added > 0 do
-        messages ++ ["#{added} row#{if added > 1, do: "s", else: ""} added"]
-      else
-        messages
-      end
+      []
+      |> append_added_message(added)
+      |> append_removed_message(removed)
+      |> append_updated_message(added, removed, changed_on_page)
 
-    messages =
-      if removed > 0 do
-        messages ++ ["#{removed} row#{if removed > 1, do: "s", else: ""} removed"]
-      else
-        messages
-      end
-
-    messages =
-      if changed_on_page and added == 0 and removed == 0 do
-        messages ++ ["Data updated"]
-      else
-        messages
-      end
-
-    if messages != [] do
-      put_flash(socket, :info, Enum.join(messages, ", "))
-    else
+    if messages == [] do
       socket
+    else
+      put_flash(socket, :info, Enum.join(messages, ", "))
     end
   end
+
+  defp append_added_message(messages, 0), do: messages
+
+  defp append_added_message(messages, added) do
+    messages ++
+      [
+        Gettext.ngettext(
+          PhoenixKitWeb.Gettext,
+          "%{count} row added",
+          "%{count} rows added",
+          added
+        )
+      ]
+  end
+
+  defp append_removed_message(messages, 0), do: messages
+
+  defp append_removed_message(messages, removed) do
+    messages ++
+      [
+        Gettext.ngettext(
+          PhoenixKitWeb.Gettext,
+          "%{count} row removed",
+          "%{count} rows removed",
+          removed
+        )
+      ]
+  end
+
+  defp append_updated_message(messages, 0, 0, true) do
+    messages ++ [Gettext.gettext(PhoenixKitWeb.Gettext, "Data updated")]
+  end
+
+  defp append_updated_message(messages, _added, _removed, _changed), do: messages
 
   def row_highlighted?(row, highlighted_rows) do
     id = Map.get(row, "id") || Map.get(row, :id)

@@ -198,4 +198,62 @@ defmodule PhoenixKitDbTest do
       assert PhoenixKitDb.notify_channel() == "phoenix_kit_db_changes"
     end
   end
+
+  describe "fetch_row/3 — input validation (no DB required)" do
+    # safe_qualified_table short-circuits BEFORE any RepoHelper call,
+    # so these branches are reachable without a live Postgres.
+
+    test "rejects schemas with unsafe characters" do
+      assert {:error, :invalid_identifier} =
+               PhoenixKitDb.fetch_row("schema-with-dashes", "users", 1)
+
+      assert {:error, :invalid_identifier} =
+               PhoenixKitDb.fetch_row("schema with spaces", "users", 1)
+
+      assert {:error, :invalid_identifier} = PhoenixKitDb.fetch_row("a;b", "users", 1)
+    end
+
+    test "rejects tables with unsafe characters" do
+      assert {:error, :invalid_identifier} =
+               PhoenixKitDb.fetch_row("public", "table-with-dashes", 1)
+
+      assert {:error, :invalid_identifier} =
+               PhoenixKitDb.fetch_row("public", "table'); DROP TABLE x; --", 1)
+    end
+
+    test "rejects empty schema/table names" do
+      assert {:error, :invalid_identifier} = PhoenixKitDb.fetch_row("", "users", 1)
+      assert {:error, :invalid_identifier} = PhoenixKitDb.fetch_row("public", "", 1)
+    end
+
+    test "rejects non-integer non-UUID row_ids" do
+      # parse_row_id returns nil for these, with shape pattern hits {:error, :invalid_id}.
+      assert {:error, :invalid_id} =
+               PhoenixKitDb.fetch_row("public", "users", "not-a-number-or-uuid")
+
+      assert {:error, :invalid_id} = PhoenixKitDb.fetch_row("public", "users", nil)
+      assert {:error, :invalid_id} = PhoenixKitDb.fetch_row("public", "users", :atom_id)
+    end
+
+    test "schema=nil falls back to public" do
+      # We can verify the fallback by asserting it doesn't error on the
+      # schema validation step — the row_id validation fires next.
+      assert {:error, :invalid_id} = PhoenixKitDb.fetch_row(nil, "users", "not-id")
+    end
+  end
+
+  describe "ensure_trigger/2 — input validation (no DB required)" do
+    test "rejects unsafe schema or table names" do
+      assert {:error, :invalid_identifier} = PhoenixKitDb.ensure_trigger("schema-bad", "users")
+      assert {:error, :invalid_identifier} = PhoenixKitDb.ensure_trigger("public", "table; --")
+      assert {:error, :invalid_identifier} = PhoenixKitDb.ensure_trigger("", "")
+    end
+  end
+
+  describe "remove_trigger/2 — input validation (no DB required)" do
+    test "rejects unsafe schema or table names" do
+      assert {:error, :invalid_identifier} = PhoenixKitDb.remove_trigger("bad-schema", "users")
+      assert {:error, :invalid_identifier} = PhoenixKitDb.remove_trigger("public", "bad-table")
+    end
+  end
 end
