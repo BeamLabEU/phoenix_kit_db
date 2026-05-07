@@ -1,4 +1,4 @@
-# PhoenixKitDb
+# PhoenixKitDB
 
 Database explorer module for [PhoenixKit](https://github.com/BeamLabEU/phoenix_kit).
 
