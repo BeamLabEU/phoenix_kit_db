@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Fix ExDoc warning: reference `PhoenixKit.Module.children/0` as a callback (`c:` prefix) so it autolinks instead of resolving as an undefined function.
+
 ## 0.1.0
 
 - Initial extraction from `phoenix_kit` core (`lib/modules/db/`).

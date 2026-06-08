@@ -8,7 +8,7 @@ defmodule PhoenixKitDb.Listener do
   arrives it broadcasts via `PhoenixKitDb.PubSub` so LiveViews can
   react in real time.
 
-  Started via the `PhoenixKit.Module.children/0` callback on
+  Started via the `c:PhoenixKit.Module.children/0` callback on
   `PhoenixKitDb`, which the host's `PhoenixKit.Supervisor` consumes
   when the module is enabled.
   """
