@@ -130,7 +130,7 @@ defmodule PhoenixKitDbTest do
     test "returns a version string" do
       version = PhoenixKitDb.version()
       assert is_binary(version)
-      assert version == "0.1.0"
+      assert version == "0.1.1"
     end
   end
 
