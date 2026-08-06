@@ -77,7 +77,14 @@ defmodule PhoenixKitDb.MixProject do
 
   defp deps do
     [
-      pk_dep(:phoenix_kit, "~> 1.7"),
+      # 1.7.55, not a bare `~> 1.7`: `fetch_row/3` calls
+      # `PhoenixKit.RepoHelper.get_pk_column/1` unguarded, which core first
+      # shipped in 1.7.55. `~> 1.7` admits 1.7.0, where that function — and
+      # `PhoenixKit.Module` (1.7.46) and `Dashboard.Tab`'s `live_view` field
+      # (1.7.46) — don't exist yet. `PhoenixKit.Activity` (1.7.90) is *not* in
+      # the floor: that call is behind `Code.ensure_loaded?/1`, so an older
+      # core just skips the log.
+      pk_dep(:phoenix_kit, "~> 1.7.55"),
       {:phoenix_live_view, "~> 1.1"},
 
       # Postgrex.Notifications drives the live-update Listener.
