@@ -98,7 +98,7 @@ defmodule PhoenixKitDb do
 
   @impl PhoenixKit.Module
   @spec version() :: String.t()
-  def version, do: "0.1.1"
+  def version, do: "0.2.0"
 
   @impl PhoenixKit.Module
   @spec css_sources() :: [atom()]

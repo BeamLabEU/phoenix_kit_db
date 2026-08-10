@@ -1,7 +1,7 @@
 defmodule PhoenixKitDb.MixProject do
   use Mix.Project
 
-  @version "0.1.1"
+  @version "0.2.0"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_db"
 
   def project do
@@ -84,7 +84,7 @@ defmodule PhoenixKitDb.MixProject do
       # (1.7.46) — don't exist yet. `PhoenixKit.Activity` (1.7.90) is *not* in
       # the floor: that call is behind `Code.ensure_loaded?/1`, so an older
       # core just skips the log.
-      pk_dep(:phoenix_kit, "~> 1.7.55"),
+      pk_dep(:phoenix_kit, "~> 2.0"),
       {:phoenix_live_view, "~> 1.1"},
 
       # Postgrex.Notifications drives the live-update Listener.

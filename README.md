@@ -17,7 +17,7 @@ Live updates are driven by Postgres `LISTEN/NOTIFY`. A trigger function (`phoeni
 ```elixir
 def deps do
   [
-    {:phoenix_kit_db, "~> 0.1.0"}
+    {:phoenix_kit_db, "~> 0.2"}
   ]
 end
 ```
