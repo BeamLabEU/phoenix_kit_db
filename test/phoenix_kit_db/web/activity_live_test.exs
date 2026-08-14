@@ -30,8 +30,8 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
       {:ok, _view, html} = live(conn, "/en/admin/db/activity")
 
       # Filter labels (delta — gettext-wrapped)
-      assert html =~ ~r/<span[^>]*label-text[^>]*>\s*Table\s*</
-      assert html =~ ~r/<span[^>]*label-text[^>]*>\s*Operation\s*</
+      assert html =~ ~r/<span[^>]*fieldset-legend[^>]*>\s*Table\s*</
+      assert html =~ ~r/<span[^>]*fieldset-legend[^>]*>\s*Operation\s*</
 
       # "All tables" / "All" defaults
       assert html =~ "All tables"
