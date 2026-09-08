@@ -323,7 +323,7 @@ defmodule PhoenixKitDb do
   defp fetch_row_by_pk(qualified, quoted_pk, id) do
     sql = "SELECT * FROM #{qualified} WHERE #{quoted_pk} = $1 LIMIT 1"
 
-    case RepoHelper.query(sql, [id]) do
+    case run_pk_query(sql, id) do
       {:ok, %{columns: columns, rows: [row]}} ->
         {:ok, columns |> Enum.zip(row) |> Map.new()}
 
@@ -333,15 +333,25 @@ defmodule PhoenixKitDb do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # `parse_row_id/1` decides integer-or-uuid from the id string alone, with no
+  # knowledge of the primary key's type, so a numeric id against a `uuid`
+  # column reaches Postgrex as the wrong type. Postgrex RAISES on an encode
+  # mismatch rather than returning an error tuple, and the Activity feed calls
+  # this from `handle_info/2` on a LISTEN/NOTIFY payload, so an escaping
+  # exception takes the LiveView down with it. Only the encode error is caught,
+  # and only around the query itself: anything else raised here is a bug and
+  # must stay visible.
+  defp run_pk_query(sql, id) do
+    RepoHelper.query(sql, [id])
   rescue
-    # `parse_row_id/1` decides integer-or-uuid from the string alone, with no
-    # knowledge of the primary key's type, so a numeric id against a `uuid`
-    # column (or the reverse) reaches Postgrex as the wrong type and it RAISES
-    # rather than returning an error tuple. Every caller here treats a lookup
-    # as fallible, and the Activity feed calls it from `handle_info/2`, where
-    # an escaping exception takes the LiveView down with it.
-    DBConnection.EncodeError -> {:error, :invalid_id}
-    ArgumentError -> {:error, :invalid_id}
+    e in DBConnection.EncodeError ->
+      Logger.warning(
+        "[PhoenixKitDb] row lookup skipped, id does not match the primary key type: #{Exception.message(e)}"
+      )
+
+      {:error, :invalid_id}
   end
 
   defp parse_row_id(id) when is_integer(id), do: id
