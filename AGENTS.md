@@ -283,8 +283,8 @@ table-backed schema is added.
 
 Test DB `phoenix_kit_db_test` (suffixed with `MIX_TEST_PARTITION` when set).
 `config/test.exs` honours `PGUSER`, `PGPASSWORD` and `PGHOST` (defaults
-`postgres` / `postgres` / `localhost`); on a Mac with brew Postgres use
-`PGUSER=maxdon`. It also points `config :phoenix_kit, repo:` at the test repo,
+`postgres` / `postgres` / `localhost`). It also points
+`config :phoenix_kit, repo:` at the test repo,
 without which every `RepoHelper` call crashes.
 
 `test/test_helper.exs`:
