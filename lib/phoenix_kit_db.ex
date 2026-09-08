@@ -26,6 +26,7 @@ defmodule PhoenixKitDb do
 
   require Logger
 
+  @version Mix.Project.config()[:version]
   @enabled_key "db_enabled"
   @default_table_page 1
   @default_table_page_size 20
@@ -98,7 +99,7 @@ defmodule PhoenixKitDb do
 
   @impl PhoenixKit.Module
   @spec version() :: String.t()
-  def version, do: "0.2.1"
+  def version, do: @version
 
   @impl PhoenixKit.Module
   @spec css_sources() :: [atom()]
@@ -332,6 +333,15 @@ defmodule PhoenixKitDb do
       {:error, reason} ->
         {:error, reason}
     end
+  rescue
+    # `parse_row_id/1` decides integer-or-uuid from the string alone, with no
+    # knowledge of the primary key's type, so a numeric id against a `uuid`
+    # column (or the reverse) reaches Postgrex as the wrong type and it RAISES
+    # rather than returning an error tuple. Every caller here treats a lookup
+    # as fallible, and the Activity feed calls it from `handle_info/2`, where
+    # an escaping exception takes the LiveView down with it.
+    DBConnection.EncodeError -> {:error, :invalid_id}
+    ArgumentError -> {:error, :invalid_id}
   end
 
   defp parse_row_id(id) when is_integer(id), do: id
