@@ -106,6 +106,31 @@ defmodule PhoenixKitDb do
   def css_sources, do: [:phoenix_kit_db]
 
   @impl PhoenixKit.Module
+  @doc """
+  The prebuilt JS bundle carrying this module's LiveView hooks.
+
+  A hook must be in the host's `LiveSocket` when it is CONSTRUCTED.
+  `PhoenixKitDbTableScroller` used to register itself from an inline
+  `<script>` in `show_live.html.heex`, which works on a hard page load but
+  silently does nothing after a LiveView navigation — morphdom never executes
+  a `<script>` it inserts, and the hooks map is already fixed by then.
+
+  The hook name is namespaced because core's `:phoenix_kit_js_sources`
+  compiler folds every bundle's global into `window.PhoenixKitHooks`
+  last-write-wins, across other modules' bundles and core's own hooks.
+  """
+  @spec js_sources() :: [%{app: atom(), file: String.t(), global: String.t()}]
+  def js_sources do
+    [
+      %{
+        app: :phoenix_kit_db,
+        file: "static/assets/phoenix_kit_db.js",
+        global: "PhoenixKitDbHooks"
+      }
+    ]
+  end
+
+  @impl PhoenixKit.Module
   @spec permission_metadata() :: %{
           key: String.t(),
           label: String.t(),

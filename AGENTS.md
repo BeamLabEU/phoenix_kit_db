@@ -129,8 +129,12 @@ Repo-local aliases and details:
 - **JS hooks:** the rule is a prebuilt bundle declared by `js_sources/0` under a
   namespaced global, never registered from an inline `<script>` (morphdom does
   not execute inserted script tags, so an inline hook vanishes on LiveView
-  navigation). This module declares no `js_sources/0`; the one hook it ships
-  is registered the broken way, see Landmines.
+  navigation). This module ships one hook, `PhoenixKitDbTableScroller`, in
+  `priv/static/assets/phoenix_kit_db.js` under the global `PhoenixKitDbHooks`,
+  declared by `js_sources/0`. A new hook goes in that same bundle, under a
+  `PhoenixKitDb`-prefixed name — core's `:phoenix_kit_js_sources` compiler
+  folds every bundle into `window.PhoenixKitHooks` last-write-wins, so an
+  unprefixed name can clobber another module's or core's.
 - **`enabled?/0`** reads `db_enabled` via `Settings.get_boolean_setting/2`,
   rescues every error AND catches `:exit`, and returns `false` in both cases
   so a sandbox-pool exit or a missing table does not surface as a crash.
@@ -170,11 +174,13 @@ Repo-local aliases and details:
 
 ### Landmines
 
-- `show_live.html.heex` registers the `DBTableScroller` hook on
-  `window.PhoenixKitHooks` from an inline `<script>` at the bottom of the
-  template. Symptom: the fake scrollbar is dead after a LiveView navigation
-  into the page. Fix: move the hook into a prebuilt bundle declared by
-  `js_sources/0`.
+- The Show page's fake scrollbar hook lives in
+  `priv/static/assets/phoenix_kit_db.js`, not in the template. It used to be an
+  inline `<script>` registering `DBTableScroller` on `window.PhoenixKitHooks`,
+  which works on a hard load and is dead after any LiveView navigation into the
+  page — morphdom does not execute a `<script>` it inserts, and the host's
+  `LiveSocket` has already snapshotted the hooks map. Editing the hook means
+  editing the bundle; adding one back into the template re-breaks it.
 - `mix precommit` runs `format --check-formatted`; an unformatted file fails
   it after the compile step. Run `mix format` first.
 - `test/test_helper.exs` `Code.require_file`s each `test/support/*.ex` by name
@@ -196,8 +202,9 @@ lib/phoenix_kit_db/listener.ex         Postgrex.Notifications GenServer (auto-re
 lib/phoenix_kit_db/paths.ex            index/0, activity/0, show/2
 lib/phoenix_kit_db/pub_sub.ex          topic constants + subscribe/broadcast wrappers
 lib/phoenix_kit_db/web/index_live.*    table list + stats
-lib/phoenix_kit_db/web/show_live.*     row preview + fake-scrollbar hook
+lib/phoenix_kit_db/web/show_live.*     row preview + fake-scrollbar container
 lib/phoenix_kit_db/web/activity_live.* live feed with per-key diff highlighting
+priv/static/assets/phoenix_kit_db.js   PhoenixKitDbHooks bundle (fake-scrollbar hook)
 ```
 
 Public API in `PhoenixKitDb`: `database_stats/0`, `list_tables/1`,
@@ -205,7 +212,10 @@ Public API in `PhoenixKitDb`: `database_stats/0`, `list_tables/1`,
 `has_trigger?/2`, `list_triggered_tables/0`, `remove_all_triggers/0`,
 `notify_channel/0`. `children/0` returns `[PhoenixKitDb.Listener]`, which the
 host's `PhoenixKit.Supervisor` starts when the module is enabled.
-`css_sources/0` returns `[:phoenix_kit_db]`.
+`css_sources/0` returns `[:phoenix_kit_db]`; `js_sources/0` returns the one
+bundle, `priv/static/assets/phoenix_kit_db.js` under the global
+`PhoenixKitDbHooks`. `priv` is in the Hex package's `files:` list, so the
+bundle reaches consumers.
 
 ### Postgres objects (runtime DDL, not migrations)
 
@@ -349,7 +359,8 @@ publish has succeeded.
 
 ## TODOs
 
-- Move `DBTableScroller` out of the inline `<script>` in `show_live.html.heex`
-  into a prebuilt bundle declared by `js_sources/0`. Trigger: the next change to
-  the Show page's scrolling UI, or the first report of the scrollbar dying
-  after LiveView navigation.
+- The `PhoenixKitDbTableScroller` bundle is hand-written, unminified ES —
+  there is no build step and nothing checks it beyond `PhoenixKitDbTest`'s
+  string assertions. Trigger for adding a real JS toolchain (lint/bundle):
+  a second hook, or the first bundle change that a string assertion cannot
+  catch.

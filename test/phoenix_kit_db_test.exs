@@ -140,6 +140,36 @@ defmodule PhoenixKitDbTest do
     end
   end
 
+  describe "js_sources/0" do
+    test "declares the prebuilt bundle and the file ships in priv/" do
+      assert [%{app: :phoenix_kit_db, file: file, global: "PhoenixKitDbHooks"}] =
+               PhoenixKitDb.js_sources()
+
+      assert File.exists?(Path.join(:code.priv_dir(:phoenix_kit_db), file))
+    end
+
+    test "the bundle defines the namespaced hook under its global" do
+      js =
+        :phoenix_kit_db
+        |> :code.priv_dir()
+        |> Path.join("static/assets/phoenix_kit_db.js")
+        |> File.read!()
+
+      assert js =~ "window.PhoenixKitDbHooks"
+      assert js =~ "PhoenixKitDbTableScroller"
+    end
+
+    # The hook must reach the host's LiveSocket through the bundle: morphdom
+    # does not execute a <script> it inserts, so a hook registered inline is
+    # dead after any LiveView navigation into the page.
+    test "the Show template uses the bundled hook and registers nothing inline" do
+      template = File.read!("lib/phoenix_kit_db/web/show_live.html.heex")
+
+      assert template =~ ~s(phx-hook="PhoenixKitDbTableScroller")
+      refute template =~ "<script"
+    end
+  end
+
   describe "children/0" do
     test "starts the Listener GenServer" do
       assert PhoenixKitDb.children() == [PhoenixKitDb.Listener]
