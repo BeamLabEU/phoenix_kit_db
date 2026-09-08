@@ -1,6 +1,16 @@
 defmodule PhoenixKitDbTest do
   use ExUnit.Case
 
+  # `function_exported?/3` answers FALSE for a module that is merely not
+  # loaded, not only for one that lacks the function, so a bare callback
+  # assertion fails intermittently under a random seed and never when the file
+  # runs alone -- the shape that reads as flaky infrastructure and gets re-run
+  # instead of fixed. Reproduced in two sibling modules before this went in.
+  setup_all do
+    Code.ensure_loaded!(PhoenixKitDb)
+    :ok
+  end
+
   # Verifies the PhoenixKit.Module behaviour contract — copy and adapt
   # for any new module you build.
 
@@ -130,13 +140,43 @@ defmodule PhoenixKitDbTest do
     test "returns a version string" do
       version = PhoenixKitDb.version()
       assert is_binary(version)
-      assert version == "0.2.1"
+      assert version == Mix.Project.config()[:version]
     end
   end
 
   describe "css_sources/0" do
     test "returns a list with the OTP app atom" do
       assert PhoenixKitDb.css_sources() == [:phoenix_kit_db]
+    end
+  end
+
+  describe "js_sources/0" do
+    test "declares the prebuilt bundle and the file ships in priv/" do
+      assert [%{app: :phoenix_kit_db, file: file, global: "PhoenixKitDbHooks"}] =
+               PhoenixKitDb.js_sources()
+
+      assert File.exists?(Path.join(:code.priv_dir(:phoenix_kit_db), file))
+    end
+
+    test "the bundle defines the namespaced hook under its global" do
+      js =
+        :phoenix_kit_db
+        |> :code.priv_dir()
+        |> Path.join("static/assets/phoenix_kit_db.js")
+        |> File.read!()
+
+      assert js =~ "window.PhoenixKitDbHooks"
+      assert js =~ "PhoenixKitDbTableScroller"
+    end
+
+    # The hook must reach the host's LiveSocket through the bundle: morphdom
+    # does not execute a <script> it inserts, so a hook registered inline is
+    # dead after any LiveView navigation into the page.
+    test "the Show template uses the bundled hook and registers nothing inline" do
+      template = File.read!("lib/phoenix_kit_db/web/show_live.html.heex")
+
+      assert template =~ ~s(phx-hook="PhoenixKitDbTableScroller")
+      refute template =~ "<script"
     end
   end
 

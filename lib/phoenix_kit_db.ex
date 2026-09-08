@@ -26,6 +26,7 @@ defmodule PhoenixKitDb do
 
   require Logger
 
+  @version Mix.Project.config()[:version]
   @enabled_key "db_enabled"
   @default_table_page 1
   @default_table_page_size 20
@@ -98,11 +99,36 @@ defmodule PhoenixKitDb do
 
   @impl PhoenixKit.Module
   @spec version() :: String.t()
-  def version, do: "0.2.1"
+  def version, do: @version
 
   @impl PhoenixKit.Module
   @spec css_sources() :: [atom()]
   def css_sources, do: [:phoenix_kit_db]
+
+  @impl PhoenixKit.Module
+  @doc """
+  The prebuilt JS bundle carrying this module's LiveView hooks.
+
+  A hook must be in the host's `LiveSocket` when it is CONSTRUCTED.
+  `PhoenixKitDbTableScroller` used to register itself from an inline
+  `<script>` in `show_live.html.heex`, which works on a hard page load but
+  silently does nothing after a LiveView navigation — morphdom never executes
+  a `<script>` it inserts, and the hooks map is already fixed by then.
+
+  The hook name is namespaced because core's `:phoenix_kit_js_sources`
+  compiler folds every bundle's global into `window.PhoenixKitHooks`
+  last-write-wins, across other modules' bundles and core's own hooks.
+  """
+  @spec js_sources() :: [%{app: atom(), file: String.t(), global: String.t()}]
+  def js_sources do
+    [
+      %{
+        app: :phoenix_kit_db,
+        file: "static/assets/phoenix_kit_db.js",
+        global: "PhoenixKitDbHooks"
+      }
+    ]
+  end
 
   @impl PhoenixKit.Module
   @spec permission_metadata() :: %{
@@ -303,26 +329,21 @@ defmodule PhoenixKitDb do
     schema = schema || "public"
 
     with {:ok, qualified} <- safe_qualified_table(schema, table),
-         id when not is_nil(id) <- parse_row_id(row_id) do
-      pk_col = RepoHelper.get_pk_column(qualified)
-
-      case safe_quote_ident(pk_col) do
-        {:ok, quoted_pk} ->
-          fetch_row_by_pk(qualified, quoted_pk, id)
-
-        {:error, _} = err ->
-          err
-      end
+         id when not is_nil(id) <- parse_row_id(row_id),
+         {:ok, pk_col, pk_type} <- pk_column_info(qualified),
+         {:ok, quoted_pk} <- safe_quote_ident(pk_col),
+         {:ok, placeholder, param} <- bind_pk_param(pk_type, id) do
+      fetch_row_by_pk(qualified, quoted_pk, placeholder, param)
     else
       nil -> {:error, :invalid_id}
       {:error, _} = err -> err
     end
   end
 
-  defp fetch_row_by_pk(qualified, quoted_pk, id) do
-    sql = "SELECT * FROM #{qualified} WHERE #{quoted_pk} = $1 LIMIT 1"
+  defp fetch_row_by_pk(qualified, quoted_pk, placeholder, param) do
+    sql = "SELECT * FROM #{qualified} WHERE #{quoted_pk} = #{placeholder} LIMIT 1"
 
-    case RepoHelper.query(sql, [id]) do
+    case run_pk_query(sql, param) do
       {:ok, %{columns: columns, rows: [row]}} ->
         {:ok, columns |> Enum.zip(row) |> Map.new()}
 
@@ -332,6 +353,92 @@ defmodule PhoenixKitDb do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Both the primary key's NAME and its TYPE, in one round trip.
+  #
+  # This deliberately does not use `RepoHelper.get_pk_column/1`, which returns
+  # only the name and RAISES `ArgumentError` when the table has no primary key,
+  # has a composite one, or does not exist. `fetch_row/3` is called from the
+  # Activity feed's `handle_info/2` on a LISTEN/NOTIFY payload naming an
+  # arbitrary table, and an escaping exception there takes the LiveView down.
+  # Those three cases are ordinary "no row to show", so they return error
+  # tuples.
+  defp pk_column_info(qualified) do
+    sql = """
+    SELECT a.attname, format_type(a.atttypid, a.atttypmod)
+    FROM pg_index i
+    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+    WHERE i.indrelid = to_regclass($1)
+    AND i.indisprimary
+    """
+
+    case RepoHelper.query(sql, [qualified]) do
+      {:ok, %{rows: [[name, type]]}} -> {:ok, name, normalize_pk_type(type)}
+      {:ok, %{rows: []}} -> {:error, :no_primary_key}
+      {:ok, %{rows: _composite}} -> {:error, :composite_primary_key}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # `format_type/2` returns the modifier too (`character varying(255)`); only
+  # the base name decides how a parameter binds.
+  defp normalize_pk_type(type) when is_binary(type) do
+    type |> String.split("(", parts: 2) |> hd() |> String.trim()
+  end
+
+  defp normalize_pk_type(_), do: ""
+
+  # Binding the parameter to the primary key's ACTUAL type is what makes a row
+  # lookup work at all.
+  #
+  # `WHERE "uuid" = $1` makes Postgres resolve `$1` to `uuid`, and Postgrex then
+  # demands a raw 16-byte binary. A canonical dashed uuid string is 36 bytes, so
+  # it raised `DBConnection.EncodeError` — meaning row lookups on a uuid primary
+  # key ALWAYS failed, valid uuid or not, and every PhoenixKit table has one.
+  # Casting on the PARAMETER side (`$1::text::uuid`) resolves `$1` to `text`,
+  # which a string encodes into cleanly, and leaves the comparison against the
+  # bare column so the primary key index is still used. Casting the COLUMN
+  # instead (`"uuid"::text = $1`) would also work and would lose the index.
+  #
+  # A value that cannot be the column's type is rejected here, before the query.
+  defp bind_pk_param("uuid", id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, canonical} -> {:ok, "$1::text::uuid", canonical}
+      :error -> {:error, :invalid_id}
+    end
+  end
+
+  defp bind_pk_param(type, id) when type in ["smallint", "integer", "bigint"] do
+    case id do
+      int when is_integer(int) -> {:ok, "$1", int}
+      _ -> {:error, :invalid_id}
+    end
+  end
+
+  # Text-ish and every other primary key type: bind the value as-is. A string
+  # against a text column needs no cast, and an unknown type is better attempted
+  # than refused — `run_pk_query/2` catches an encode mismatch either way.
+  defp bind_pk_param(_type, id), do: {:ok, "$1", id}
+
+  # A backstop, not the fix. `bind_pk_param/2` rejects a value that cannot be
+  # the primary key's type before any query runs, so this should no longer
+  # fire — but Postgrex RAISES `DBConnection.EncodeError` on a parameter/column
+  # type mismatch rather than returning an error tuple, and `fetch_row/3` runs
+  # inside the Activity feed's `handle_info/2` on a LISTEN/NOTIFY payload naming
+  # an arbitrary table, where an escaping exception takes the LiveView down.
+  # An exotic primary key type reaching the catch-all `bind_pk_param/2` clause
+  # lands here. Only the encode error is caught, and only around the query
+  # itself: anything else raised here is a bug and must stay visible.
+  defp run_pk_query(sql, id) do
+    RepoHelper.query(sql, [id])
+  rescue
+    e in DBConnection.EncodeError ->
+      Logger.warning(
+        "[PhoenixKitDb] row lookup skipped, id does not match the primary key type: #{Exception.message(e)}"
+      )
+
+      {:error, :invalid_id}
   end
 
   defp parse_row_id(id) when is_integer(id), do: id
