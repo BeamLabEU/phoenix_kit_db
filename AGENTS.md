@@ -50,12 +50,14 @@ connection (the `PhoenixKitDb.Listener` GenServer) parses notifications on the
   surface to UI flashes (the LVs render an empty state or redirect). If a
   future code path surfaces them, copy the shape of
   `phoenix_kit_locations`' `lib/phoenix_kit_locations/errors.ex`.
-  `fetch_row/3` must never raise: `parse_row_id/1` reads integer-or-uuid off
-  the string alone and cannot know the primary key's type, so a numeric id
-  against a `uuid` column reaches Postgrex as the wrong type. Postgrex raises
-  there instead of returning an error tuple, and the Activity feed calls this
-  from `handle_info/2`, where an escaping exception kills the LiveView. The
-  query is wrapped so that becomes `{:error, :invalid_id}`.
+  `fetch_row/3` must never raise. The Activity feed calls it from
+  `handle_info/2` on a LISTEN/NOTIFY payload naming an arbitrary table, so an
+  escaping exception kills the LiveView. Three things could raise and now
+  return error tuples instead: a parameter that cannot be the primary key's
+  type (`bind_pk_param/2` rejects it before the query, and `run_pk_query/2`
+  still rescues `DBConnection.EncodeError` as a backstop), and a table with no
+  primary key or a composite one (`pk_column_info/1` replaces core's
+  `RepoHelper.get_pk_column/1`, which raises `ArgumentError` on both).
 - **No write surface to user data.** The module is read-only against
   arbitrary tables. The only mutating operations it owns are the trigger DDL
   (`CREATE OR REPLACE FUNCTION`, `CREATE TRIGGER`, `DROP TRIGGER`) and the
@@ -174,6 +176,22 @@ Repo-local aliases and details:
 
 ### Landmines
 
+- **A `uuid` primary key needs the cast on the PARAMETER side.**
+  `WHERE "uuid" = $1` makes Postgres resolve `$1` to `uuid`, so Postgrex demands
+  a raw 16-byte binary and raises `DBConnection.EncodeError` on the 36-byte
+  canonical string. That is not an edge case: every PhoenixKit table has a
+  UUIDv7 primary key, so row lookups failed for all of them and the Activity
+  feed's per-key row diff never rendered. `bind_pk_param/2` binds
+  `$1::text::uuid`, which resolves `$1` to `text` and leaves the comparison
+  against the bare column so the primary key index is still used. Casting the
+  column instead (`"uuid"::text = $1`) also works and loses the index.
+- **Bind and unbind the scrollbar handlers through one shared pair.**
+  `mounted()` and `updated()` used to wire different behaviour: the re-bind
+  after a scrollbar swap pointed mousedown at `showMarkers()`, never touched
+  `isHoldingScrollbar` and bound no `mouseenter`, so a patch that replaced the
+  node left a scrollbar that no longer snapped to a page. `buildHandlers/0` +
+  `bindScrollbar/0` + `unbindScrollbar/0` are the only sanctioned path, and the
+  handlers are named so `removeEventListener` can actually find them.
 - The Show page's fake scrollbar hook lives in
   `priv/static/assets/phoenix_kit_db.js`, not in the template. It used to be an
   inline `<script>` registering `DBTableScroller` on `window.PhoenixKitHooks`,

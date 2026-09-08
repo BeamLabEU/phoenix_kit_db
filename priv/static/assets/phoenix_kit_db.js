@@ -21,9 +21,6 @@
 
   hooks.PhoenixKitDbTableScroller = {
     mounted() {
-      this.scrollbar = this.el.querySelector('#fake-scrollbar');
-      this.pageMarkers = this.el.querySelector('#page-markers');
-
       this.pendingPage = null;
       this.debounceTimer = null;
       this.markerHideTimer = null;
@@ -32,52 +29,95 @@
       this.page = parseInt(this.el.dataset.page || '1', 10);
       this.totalPages = parseInt(this.el.dataset.totalPages || '1', 10);
 
+      this.pageMarkers = this.el.querySelector('#page-markers');
+      this.scrollbar = this.el.querySelector('#fake-scrollbar');
+
+      this.buildHandlers();
+      this.bindScrollbar();
+
       requestAnimationFrame(() => this.syncScrollToPage());
+    },
 
-      if (this.scrollbar) {
-        this.scrollHandler = this.handleScroll.bind(this);
-        this.scrollbar.addEventListener('scroll', this.scrollHandler, { passive: true });
+    // One set of NAMED handlers, built once and reused for every bind. Two
+    // reasons they cannot be inline arrows:
+    //
+    //   * `removeEventListener` needs the identical function reference, so an
+    //     anonymous arrow can never be unbound. `destroyed()` used to remove
+    //     only the scroll handler and leak the other four, and a late `mouseup`
+    //     on a torn-down hook still called snapToPage() -> pushEvent().
+    //   * `mounted()` and `updated()` must bind the SAME behaviour. They did
+    //     not: the re-bind after a scrollbar swap wired mousedown to
+    //     showMarkers() and mouseup to hideMarkersDelayed(), never touched
+    //     isHoldingScrollbar, and bound no mouseenter at all -- so once a patch
+    //     replaced the scrollbar node, dragging it stopped snapping to a page
+    //     and hovering stopped revealing the markers. Sharing one builder makes
+    //     that class of drift impossible.
+    buildHandlers() {
+      if (this.handlers) return;
 
-        this.scrollbar.addEventListener('mouseenter', () => {
+      this.handlers = {
+        scroll: this.handleScroll.bind(this),
+
+        mouseenter: () => {
           this.isHovering = true;
           this.showMarkers();
-        });
+        },
 
-        this.scrollbar.addEventListener('mouseleave', () => {
+        mouseleave: () => {
           this.isHovering = false;
           if (this.isHoldingScrollbar) {
             this.isHoldingScrollbar = false;
             this.snapToPage();
           }
           this.hideMarkersDelayed();
-        });
+        },
 
-        this.scrollbar.addEventListener('mousedown', () => {
+        mousedown: () => {
           this.isHoldingScrollbar = true;
-        });
-        this.scrollbar.addEventListener('mouseup', () => {
+        },
+
+        mouseup: () => {
           this.isHoldingScrollbar = false;
           this.snapToPage();
-        });
-      }
+        }
+      };
     },
 
+    bindScrollbar() {
+      if (!this.scrollbar || this.bound) return;
+
+      this.scrollbar.addEventListener('scroll', this.handlers.scroll, { passive: true });
+      this.scrollbar.addEventListener('mouseenter', this.handlers.mouseenter);
+      this.scrollbar.addEventListener('mouseleave', this.handlers.mouseleave);
+      this.scrollbar.addEventListener('mousedown', this.handlers.mousedown);
+      this.scrollbar.addEventListener('mouseup', this.handlers.mouseup);
+      this.bound = true;
+    },
+
+    unbindScrollbar() {
+      if (!this.scrollbar || !this.bound) return;
+
+      this.scrollbar.removeEventListener('scroll', this.handlers.scroll);
+      this.scrollbar.removeEventListener('mouseenter', this.handlers.mouseenter);
+      this.scrollbar.removeEventListener('mouseleave', this.handlers.mouseleave);
+      this.scrollbar.removeEventListener('mousedown', this.handlers.mousedown);
+      this.scrollbar.removeEventListener('mouseup', this.handlers.mouseup);
+      this.bound = false;
+    },
+
+    // Rebinds ONLY when morphdom actually replaced the scrollbar node. This
+    // runs on every patch, and the Show page live-refreshes on every mutation
+    // to the table it is previewing, so an unconditional bind here would stack
+    // a fresh handler set per notification.
     updated() {
       const newPage = parseInt(this.el.dataset.page || '1', 10);
       const newTotalPages = parseInt(this.el.dataset.totalPages || '1', 10);
 
       const newScrollbar = this.el.querySelector('#fake-scrollbar');
       if (newScrollbar !== this.scrollbar) {
-        if (this.scrollbar) {
-          this.scrollbar.removeEventListener('scroll', this.scrollHandler);
-        }
+        this.unbindScrollbar();
         this.scrollbar = newScrollbar;
-        if (this.scrollbar) {
-          this.scrollbar.addEventListener('scroll', this.scrollHandler, { passive: true });
-          this.scrollbar.addEventListener('mousedown', () => this.showMarkers());
-          this.scrollbar.addEventListener('mouseup', () => this.hideMarkersDelayed());
-          this.scrollbar.addEventListener('mouseleave', () => this.hideMarkersDelayed());
-        }
+        this.bindScrollbar();
       }
       this.pageMarkers = this.el.querySelector('#page-markers');
 
@@ -93,9 +133,7 @@
     },
 
     destroyed() {
-      if (this.scrollbar) {
-        this.scrollbar.removeEventListener('scroll', this.scrollHandler);
-      }
+      this.unbindScrollbar();
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       if (this.markerHideTimer) clearTimeout(this.markerHideTimer);
     },
