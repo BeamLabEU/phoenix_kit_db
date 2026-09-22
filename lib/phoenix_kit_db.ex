@@ -902,26 +902,6 @@ defmodule PhoenixKitDb do
   # ============================================================================
 
   defp log_module_toggle(state) when state in [:enabled, :disabled] do
-    if Code.ensure_loaded?(PhoenixKit.Activity) do
-      PhoenixKit.Activity.log(%{
-        action: "db.module_#{state}",
-        module: module_key(),
-        mode: "manual",
-        resource_type: "module",
-        metadata: %{}
-      })
-    end
-  rescue
-    Postgrex.Error ->
-      :ok
-
-    DBConnection.OwnershipError ->
-      :ok
-
-    e ->
-      Logger.warning("[PhoenixKitDb] Activity logging error: #{Exception.message(e)}")
-      {:error, e}
-  catch
-    :exit, _reason -> :ok
+    PhoenixKit.Activity.log(module_key(), "db.module_#{state}", resource_type: "module")
   end
 end

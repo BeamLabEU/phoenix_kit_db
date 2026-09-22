@@ -27,8 +27,9 @@ connection (the `PhoenixKitDb.Listener` GenServer) parses notifications on the
 
 - **Depends on:** `phoenix_kit` `~> 2.0` (Hex); `phoenix_live_view` `~> 1.1`;
   `postgrex` `~> 0.17` (`Postgrex.Notifications` for the Listener); test-only
-  `lazy_html`. No sibling `phoenix_kit_*` deps. `PhoenixKit.Activity` is
-  called behind `Code.ensure_loaded?/1`, so it is not part of the floor.
+  `lazy_html`. No sibling `phoenix_kit_*` deps. The module toggles log through
+  core's `PhoenixKit.Activity.log/3`, so the floor is the core release that
+  added it.
 - **Consumed by:** nothing yet. Core mirrors this module's `permission_metadata/0`
   (label `"DB"`, icon `hero-server-stack`, description) in
   `PhoenixKit.Users.Permissions` fallbacks so the `db` key renders correctly
