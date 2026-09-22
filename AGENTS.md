@@ -144,9 +144,9 @@ Repo-local aliases and details:
 - **Activity logging:** only the module toggle logs, as `db.module_enabled` /
   `db.module_disabled` with `module: "db"`, `mode: "manual"`,
   `resource_type: "module"`, empty metadata and no actor (core's Modules page
-  invokes `enable_system/0` without threading a user). The call is guarded by
-  `Code.ensure_loaded?(PhoenixKit.Activity)` and rescues `Postgrex.Error`,
-  `DBConnection.OwnershipError` and `:exit`. `ensure_trigger/2` deliberately
+  invokes `enable_system/0` without threading a user). The call is core's
+  `PhoenixKit.Activity.log/3`, which never raises, so a toggle never fails on
+  its audit row. `ensure_trigger/2` deliberately
   never logs: it fires on every Show mount and would drown the audit feed.
   No PII is written.
 - **Soft-delete sentinel:** none (no schemas).
