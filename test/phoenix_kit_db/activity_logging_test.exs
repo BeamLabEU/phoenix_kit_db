@@ -31,11 +31,7 @@ defmodule PhoenixKitDb.ActivityLoggingTest do
       PhoenixKitDb.disable_system()
     end
 
-    test "does not raise when PhoenixKit.Activity is unavailable" do
-      # Guard with Code.ensure_loaded?/1 — this test pins the rescue.
-      # In our test env Activity IS loaded, so we just confirm the
-      # success path returns the wrapped Settings result without
-      # crashing.
+    test "answers the settings write, whatever the log did" do
       assert {:ok, _setting} = PhoenixKitDb.enable_system()
       PhoenixKitDb.disable_system()
     end
