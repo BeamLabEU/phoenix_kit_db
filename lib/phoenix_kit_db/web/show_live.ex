@@ -43,6 +43,9 @@ defmodule PhoenixKitDb.Web.ShowLive do
 
       socket =
         socket
+        |> assign(:page_section, Gettext.gettext(PhoenixKitWeb.Gettext, "DB"))
+        |> assign(:page_section_path, Paths.index())
+        |> assign(:page_crumbs, [])
         |> assign(:page_title, "#{schema}.#{table}")
         # ^ schema/table are programmatic identifiers — not translatable.
         |> assign(:schema, schema)

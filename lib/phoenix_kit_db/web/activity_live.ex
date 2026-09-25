@@ -33,7 +33,10 @@ defmodule PhoenixKitDb.Web.ActivityLive do
 
     socket =
       socket
-      |> assign(:page_title, Gettext.gettext(PhoenixKitWeb.Gettext, "Live Activity"))
+      |> assign(:page_section, Gettext.gettext(PhoenixKitWeb.Gettext, "DB"))
+      |> assign(:page_section_path, PhoenixKitDb.Paths.index())
+      |> assign(:page_crumbs, [])
+      |> assign(:page_title, Gettext.gettext(PhoenixKitWeb.Gettext, "Activity"))
       |> assign(:activity_log, [])
       |> assign(:paused, false)
       |> assign(:filter_table, initial_table_filter)
