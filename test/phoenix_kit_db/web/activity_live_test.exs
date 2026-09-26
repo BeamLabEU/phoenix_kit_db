@@ -24,6 +24,18 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
       assert html =~ ~r/<span[^>]*hero-pause/
     end
 
+    test "the header trail is DB / Activity", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+
+      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.page_section == "DB"
+      assert assigns.page_section_path == "/en/admin/db"
+      assert assigns.page_crumbs == []
+      assert assigns.page_title == "Activity"
+    end
+
     test "renders the filter form labels", %{conn: conn} do
       conn = put_test_scope(conn, fake_scope())
 

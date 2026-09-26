@@ -20,6 +20,18 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       assert html =~ "?table=public.phoenix_kit_settings"
     end
 
+    test "the header trail is DB / <schema.table>", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+
+      {:ok, view, _html} = live(conn, "/en/admin/db/public/phoenix_kit_settings")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.page_section == "DB"
+      assert assigns.page_section_path == "/en/admin/db"
+      assert assigns.page_crumbs == []
+      assert assigns.page_title == "public.phoenix_kit_settings"
+    end
+
     test "renders pagination controls + Show/per-page form (gettext deltas)", %{conn: conn} do
       conn = put_test_scope(conn, fake_scope())
 

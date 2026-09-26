@@ -25,10 +25,11 @@ connection (the `PhoenixKitDb.Listener` GenServer) parses notifications on the
 `phoenix_kit_db_changes` channel and rebroadcasts them via
 `PhoenixKitDb.PubSub`.
 
-- **Depends on:** `phoenix_kit` `~> 2.0` (Hex); `phoenix_live_view` `~> 1.1`;
+- **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex); `phoenix_live_view` `~> 1.1`;
   `postgrex` `~> 0.17` (`Postgrex.Notifications` for the Listener); test-only
-  `lazy_html`. No sibling `phoenix_kit_*` deps. `PhoenixKit.Activity` is
-  called behind `Code.ensure_loaded?/1`, so it is not part of the floor.
+  `lazy_html`. No sibling `phoenix_kit_*` deps. The module toggles log through
+  core's `PhoenixKit.Activity.log/3`, so the floor is the core release that
+  added it.
 - **Consumed by:** nothing yet. Core mirrors this module's `permission_metadata/0`
   (label `"DB"`, icon `hero-server-stack`, description) in
   `PhoenixKit.Users.Permissions` fallbacks so the `db` key renders correctly
@@ -143,9 +144,9 @@ Repo-local aliases and details:
 - **Activity logging:** only the module toggle logs, as `db.module_enabled` /
   `db.module_disabled` with `module: "db"`, `mode: "manual"`,
   `resource_type: "module"`, empty metadata and no actor (core's Modules page
-  invokes `enable_system/0` without threading a user). The call is guarded by
-  `Code.ensure_loaded?(PhoenixKit.Activity)` and rescues `Postgrex.Error`,
-  `DBConnection.OwnershipError` and `:exit`. `ensure_trigger/2` deliberately
+  invokes `enable_system/0` without threading a user). The call is core's
+  `PhoenixKit.Activity.log/3`, which never raises, so a toggle never fails on
+  its audit row. `ensure_trigger/2` deliberately
   never logs: it fires on every Show mount and would drown the audit feed.
   No PII is written.
 - **Soft-delete sentinel:** none (no schemas).
@@ -170,9 +171,10 @@ Repo-local aliases and details:
   format.
 - **`handle_info/2` catch-all:** every LV and the Listener has a defensive
   catch-all that logs at `:debug` and returns `{:noreply, ...}`. Never silent.
-- **Core pin stays a two-segment `~> 2.0`.** `test/core_pin_conformance_test.exs`
-  fails on a three-segment form (which excludes the next core minor and breaks
-  `mix deps.get` for every host) and on a committed `path:` dep.
+- **Core pin keeps the compound `>= 2.38.0 and < 3.0.0` form.**
+  `test/core_pin_conformance_test.exs` fails on a three-segment form (which
+  excludes the next core minor and breaks `mix deps.get` for every host) and on
+  a committed `path:` dep.
 
 ### Landmines
 

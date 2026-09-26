@@ -84,7 +84,12 @@ defmodule PhoenixKitDb.MixProject do
       # (1.7.46) — don't exist yet. `PhoenixKit.Activity` (1.7.90) is *not* in
       # the floor: that call is behind `Code.ensure_loaded?/1`, so an older
       # core just skips the log.
-      pk_dep(:phoenix_kit, "~> 2.0"),
+      # 2.38.0 is the floor now: the actor and the activity log come from
+      # `PhoenixKitWeb.Actor` and `PhoenixKit.Activity.log/3`, first shipped
+      # there and no longer feature-detected, so a lower core fails to compile.
+      # Patch-precise floor in the compound form, so the ceiling stays open
+      # through every later 2.x minor (see test/core_pin_conformance_test.exs).
+      pk_dep(:phoenix_kit, ">= 2.38.0 and < 3.0.0"),
       {:phoenix_live_view, "~> 1.1"},
 
       # Postgrex.Notifications drives the live-update Listener.
