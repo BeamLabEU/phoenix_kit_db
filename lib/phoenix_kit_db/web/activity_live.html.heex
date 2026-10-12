@@ -147,14 +147,14 @@
                               <% is_nil(value) -> %>
                                 <span class="text-base-content/40 italic">{Gettext.gettext(PhoenixKitWeb.Gettext, "null")}</span>
                               <% is_map(value) or is_list(value) -> %>
-                                <details>
+                                <details phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])}>
                                   <summary class="cursor-pointer text-primary">
                                     {if is_map(value), do: "{ ... }", else: "[ ... ]"}
                                   </summary>
                                   <pre class="mt-1 text-[10px] whitespace-pre-wrap">{format_value(value)}</pre>
                                 </details>
                               <% is_binary(value) and byte_size(value) > 100 -> %>
-                                <details>
+                                <details phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])}>
                                   <summary class="cursor-pointer">
                                     {String.slice(value, 0, 100)}...
                                   </summary>
