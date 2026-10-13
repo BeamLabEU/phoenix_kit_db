@@ -22,6 +22,7 @@ defmodule PhoenixKitDb.CommittedTriggerTest do
   alias PhoenixKitDb.Fixtures
   alias PhoenixKitDb.Listener
   alias PhoenixKitDb.PubSub
+  alias PhoenixKitDb.QueryCounter
   alias PhoenixKitDb.Test.Repo, as: TestRepo
 
   @moduletag :integration
@@ -101,6 +102,61 @@ defmodule PhoenixKitDb.CommittedTriggerTest do
   end
 
   describe "a committed write" do
+    test "notification byte limits never abort writes and preserve the table event", %{
+      writer: writer
+    } do
+      Fixtures.unboxed(fn ->
+        Fixtures.sql!("DROP TABLE #{@table}")
+        Fixtures.sql!("CREATE TABLE #{@table} (id text, label text)")
+        assert :ok = PhoenixKitDb.ensure_trigger("public", @table)
+      end)
+
+      notifications = start_supervised!({Postgrex.Notifications, TestRepo.config()})
+      {:ok, ref} = Postgrex.Notifications.listen(notifications, PhoenixKitDb.notify_channel())
+      prefix = "public.#{@table}:INSERT:"
+
+      for id <- [
+            "user:42:web",
+            String.duplicate("x", 7999 - byte_size(prefix)),
+            String.duplicate("x", 8000 - byte_size(prefix)),
+            String.duplicate("界", 2700)
+          ] do
+        assert {:ok, _} = Postgrex.query(writer, "INSERT INTO #{@table} VALUES ($1, 'ok')", [id])
+        expected = if byte_size(prefix <> id) < 8000, do: prefix <> id, else: prefix
+
+        assert_receive {:notification, ^notifications, ^ref, "phoenix_kit_db_changes", ^expected},
+                       1000
+      end
+
+      assert {:ok, _} = Postgrex.query(writer, "UPDATE #{@table} SET label = 'updated'", [])
+
+      assert_receive {:notification, ^notifications, ^ref, "phoenix_kit_db_changes",
+                      "public.pk_db_committed:UPDATE:"},
+                     1000
+
+      assert {:ok, _} = Postgrex.query(writer, "DELETE FROM #{@table}", [])
+
+      assert_receive {:notification, ^notifications, ^ref, "phoenix_kit_db_changes",
+                      "public.pk_db_committed:DELETE:"},
+                     1000
+    end
+
+    test "concurrent installation replaces the function once and all callers succeed" do
+      {results, statements} =
+        QueryCounter.capture(fn ->
+          1..8
+          |> Task.async_stream(
+            fn _ -> Fixtures.unboxed(fn -> PhoenixKitDb.ensure_notify_function() end) end,
+            max_concurrency: 8,
+            timeout: 10_000
+          )
+          |> Enum.to_list()
+        end)
+
+      assert results == List.duplicate({:ok, :ok}, 8)
+      assert QueryCounter.count(statements, "CREATE OR REPLACE FUNCTION") == 1
+    end
+
     @tag :committed_trigger
     test "fires a NOTIFY that the Listener broadcasts to subscribers", %{writer: writer} do
       start_supervised!(Listener)
@@ -155,6 +211,33 @@ defmodule PhoenixKitDb.CommittedTriggerTest do
 
   describe "trigger DDL behind a held lock" do
     setup [:with_short_lock_timeout, :start_sandbox]
+
+    test "notify-function upgrades give up under an advisory lock and recover", %{writer: writer} do
+      test_pid = self()
+
+      holder =
+        Task.async(fn ->
+          Postgrex.transaction(writer, fn conn ->
+            Postgrex.query!(conn, "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [
+              "phoenix_kit_notify_table_change"
+            ])
+
+            send(test_pid, :function_locked)
+
+            receive do
+              :release -> :ok
+            end
+          end)
+        end)
+
+      assert_receive :function_locked, 5_000
+      started = System.monotonic_time(:millisecond)
+      assert {:error, :lock_timeout} = PhoenixKitDb.ensure_notify_function()
+      assert System.monotonic_time(:millisecond) - started < 2_000
+      send(holder.pid, :release)
+      Task.await(holder)
+      assert :ok = PhoenixKitDb.ensure_notify_function()
+    end
 
     test "ensure_trigger/2 gives up with :lock_timeout and works once the lock is gone",
          %{writer: writer} do

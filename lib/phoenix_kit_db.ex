@@ -68,7 +68,7 @@ defmodule PhoenixKitDb do
   # The column types row search reads. `json` and `jsonb` are absent on
   # purpose: masking hides secret-named keys inside them, and a search over
   # the whole document would still match the hidden values.
-  @textual_types ~w(text character varying character citext uuid inet)
+  @textual_types ["text", "character varying", "character", "citext", "uuid", "inet"]
 
   @typedoc "An identifier accepted by the schema/table-name validator."
   @type identifier_string :: String.t()
@@ -364,8 +364,6 @@ defmodule PhoenixKitDb do
     page = normalize_page(Map.get(opts, :page, @default_table_page))
     per_page = normalize_page_size(Map.get(opts, :per_page, @default_table_page_size))
     search = Map.get(opts, :search, "") |> to_string()
-    offset = (page - 1) * per_page
-
     {where_sql, where_params} = table_search_clause(search)
 
     count_sql = """
@@ -380,6 +378,10 @@ defmodule PhoenixKitDb do
         {:ok, %{rows: [[count, hidden]]}} -> {count, hidden}
         _ -> {0, 0}
       end
+
+    total_pages = max(div_with_ceiling(total_entries, per_page), 1)
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
 
     list_sql = """
     SELECT schemaname, relname, n_live_tup, pg_total_relation_size(relid)
@@ -397,8 +399,6 @@ defmodule PhoenixKitDb do
         {:ok, %{rows: rows}} -> Enum.map(rows, &row_to_table_entry/1)
         _ -> []
       end
-
-    total_pages = max(div_with_ceiling(total_entries, per_page), 1)
 
     %{
       entries: entries,
@@ -465,6 +465,8 @@ defmodule PhoenixKitDb do
     end
   end
 
+  def fetch_row(_schema, _table, _row_id), do: {:error, :invalid_identifier}
+
   defp fetch_row_by_pk(qualified, quoted_pk, placeholder, param, uuid_kinds) do
     sql = "SELECT * FROM #{qualified} WHERE #{quoted_pk} = #{placeholder} LIMIT 1"
 
@@ -498,7 +500,8 @@ defmodule PhoenixKitDb do
       format_type(a.atttypid, a.atttypmod),
       EXISTS (
         SELECT 1 FROM pg_index i
-        WHERE i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = a.attrelid AND i.indisprimary
+          AND a.attnum = ANY((i.indkey::smallint[])[0:i.indnkeyatts - 1])
       )
     FROM pg_attribute a
     WHERE a.attrelid = to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped
@@ -564,16 +567,31 @@ defmodule PhoenixKitDb do
   end
 
   defp bind_pk_param(type, id) when type in ["smallint", "integer", "bigint"] do
-    case id do
+    case parse_integer_id(id) do
       int when is_integer(int) -> {:ok, "$1", int}
       _ -> {:error, :invalid_id}
     end
+  end
+
+  defp bind_pk_param(type, id) when type in @textual_types do
+    {:ok, "$1", to_string(id)}
   end
 
   # Text-ish and every other primary key type: bind the value as-is. A string
   # against a text column needs no cast, and an unknown type is better attempted
   # than refused — `run_pk_query/2` catches an encode mismatch either way.
   defp bind_pk_param(_type, id), do: {:ok, "$1", id}
+
+  defp parse_integer_id(id) when is_integer(id), do: id
+
+  defp parse_integer_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {integer, ""} -> integer
+      _ -> nil
+    end
+  end
+
+  defp parse_integer_id(_id), do: nil
 
   # A backstop, not the fix. `bind_pk_param/2` rejects a value that cannot be
   # the primary key's type before any query runs, so this should no longer
@@ -597,12 +615,7 @@ defmodule PhoenixKitDb do
 
   defp parse_row_id(id) when is_integer(id), do: id
 
-  defp parse_row_id(id) when is_binary(id) do
-    case Integer.parse(id) do
-      {int_id, ""} -> int_id
-      _ -> if match?({:ok, _}, Ecto.UUID.cast(id)), do: id, else: nil
-    end
-  end
+  defp parse_row_id(id) when is_binary(id), do: if(String.valid?(id), do: id)
 
   defp parse_row_id(_), do: nil
 
@@ -652,9 +665,10 @@ defmodule PhoenixKitDb do
   defp build_preview(%{qualified: qualified, columns: columns, stats: stats} = request) do
     %{page: page, per_page: per_page} = request
     {where_clause, search_params} = row_search_clause(request.search, columns)
-    offset = (page - 1) * per_page
-
     {total_rows, approx?} = count_rows(qualified, where_clause, search_params, stats.estimate)
+    total_pages = max(div_with_ceiling(total_rows, per_page), 1)
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
     order_column = pick_order_column(columns)
 
     attributes =
@@ -684,7 +698,7 @@ defmodule PhoenixKitDb do
       row_count_approx: approx?,
       page: page,
       per_page: per_page,
-      total_pages: max(div_with_ceiling(total_rows, per_page), 1),
+      total_pages: total_pages,
       approx_rows: stats.approx_rows,
       size_bytes: stats.size_bytes
     }
@@ -756,7 +770,10 @@ defmodule PhoenixKitDb do
 
   defp fetch_columns(schema, table) do
     sql = """
-    SELECT column_name, data_type, is_nullable, ordinal_position
+    SELECT column_name,
+      CASE WHEN data_type = 'USER-DEFINED' AND udt_name = 'citext'
+        THEN udt_name ELSE data_type END,
+      is_nullable, ordinal_position
     FROM information_schema.columns
     WHERE table_schema = $1 AND table_name = $2
     ORDER BY ordinal_position
@@ -844,11 +861,13 @@ defmodule PhoenixKitDb do
     text_columns =
       Enum.filter(columns, fn column ->
         data_type = String.downcase(column.data_type || "")
-        data_type in @textual_types and Cells.searchable_column?(column.name, column_names)
+
+        data_type in @textual_types and Cells.searchable_column?(column.name, column_names) and
+          match?({:ok, _}, safe_quote_ident(column.name))
       end)
 
     if text_columns == [] do
-      {"", []}
+      {"WHERE FALSE", []}
     else
       pattern = "%" <> search <> "%"
 
@@ -1059,12 +1078,13 @@ defmodule PhoenixKitDb do
   @spec notify_channel() :: String.t()
   def notify_channel, do: @notify_channel
 
-  defp ensure_notify_function do
-    sql = """
-    CREATE OR REPLACE FUNCTION #{@notify_function_name}()
-    RETURNS trigger AS $$
+  @doc "Updates the notification function without watching an additional table."
+  @spec ensure_notify_function() :: :ok | {:error, term()}
+  def ensure_notify_function do
+    body = """
     DECLARE
       row_id TEXT;
+      payload TEXT;
     BEGIN
       -- Try uuid first (Category A tables), then id (Category B), then empty
       IF TG_OP = 'DELETE' THEN
@@ -1090,7 +1110,13 @@ defmodule PhoenixKitDb do
       END IF;
 
       -- Payload format: schema.table:operation:row_id
-      PERFORM pg_notify('#{@notify_channel}', TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME || ':' || TG_OP || ':' || COALESCE(row_id, ''));
+      payload := TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME || ':' || TG_OP || ':';
+      -- Keep the refresh event even when the id cannot fit. Never send a
+      -- truncated id that could resolve a different row, or abort the write.
+      IF octet_length(payload || COALESCE(row_id, '')) < 8000 THEN
+        payload := payload || COALESCE(row_id, '');
+      END IF;
+      PERFORM pg_notify('#{@notify_channel}', payload);
 
       -- AFTER triggers ignore return value, but we return appropriately for completeness
       IF TG_OP = 'DELETE' THEN
@@ -1099,13 +1125,45 @@ defmodule PhoenixKitDb do
         RETURN NEW;
       END IF;
     END;
-    $$ LANGUAGE plpgsql;
     """
 
-    case RepoHelper.query(sql) do
-      {:ok, _} -> :ok
+    case notify_function_current?(body) do
+      {:ok, true} -> :ok
+      {:ok, false} -> replace_notify_function(body)
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp notify_function_current?(body) do
+    sql = "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE oid = to_regprocedure($1) AND prosrc = $2)"
+
+    case RepoHelper.query(sql, ["#{@notify_function_name}()", body]) do
+      {:ok, %{rows: [[current?]]}} -> {:ok, current?}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp replace_notify_function(body) do
+    # Only installation/upgrades take the lock. Recheck after acquiring it:
+    # another session may have installed the same body while this one waited.
+    run_ddl(fn ->
+      with {:ok, _} <-
+             RepoHelper.query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [
+               @notify_function_name
+             ]),
+           {:ok, current?} <- notify_function_current?(body) do
+        write_notify_function(current?, body)
+      end
+    end)
+  end
+
+  defp write_notify_function(true, _body), do: {:ok, nil}
+
+  defp write_notify_function(false, body) do
+    RepoHelper.query("""
+    CREATE OR REPLACE FUNCTION #{@notify_function_name}()
+    RETURNS trigger AS $phoenix_kit_db$#{body}$phoenix_kit_db$ LANGUAGE plpgsql
+    """)
   end
 
   defp create_table_trigger(schema, table, qualified) do
@@ -1134,12 +1192,14 @@ defmodule PhoenixKitDb do
   # Queued behind one long transaction it would hold up all the writers that
   # arrive after it, so the wait is bounded: `SET LOCAL` scopes the timeout to
   # this transaction, and a timeout comes back as `{:error, :lock_timeout}`.
-  defp run_ddl(sql) do
+  defp run_ddl(sql) when is_binary(sql), do: run_ddl(fn -> RepoHelper.query(sql) end)
+
+  defp run_ddl(action) when is_function(action, 0) do
     result =
       RepoHelper.transaction(fn ->
         with {:ok, _} <-
                RepoHelper.query("SET LOCAL lock_timeout = '#{ddl_lock_timeout_ms()}ms'"),
-             {:ok, _} <- RepoHelper.query(sql) do
+             {:ok, _} <- action.() do
           :ok
         else
           {:error, reason} -> RepoHelper.rollback(reason)

@@ -226,10 +226,75 @@ defmodule PhoenixKitDb.TablesTest do
       assert page2.row_count == 25
       assert page2.row_count_approx == false
       assert page2.total_pages == 3
+
+      last = PhoenixKitDb.table_preview("public", "pk_db_pages", %{page: 999, per_page: 10})
+      assert last.page == 3
+      assert Enum.map(last.rows, & &1["id"]) == Enum.to_list(21..25)
     end
   end
 
   describe "table_preview/3 search" do
+    test "citext columns are searchable despite their USER-DEFINED catalog type" do
+      Fixtures.sql!("CREATE EXTENSION IF NOT EXISTS citext")
+      Fixtures.sql!("CREATE TABLE pk_db_citext (id int PRIMARY KEY, label citext)")
+      Fixtures.sql!("INSERT INTO pk_db_citext VALUES (1, 'CaseInsensitive')")
+      preview = PhoenixKitDb.table_preview("public", "pk_db_citext", %{search: "caseinsensitive"})
+      assert [%{"id" => 1}] = preview.rows
+      assert Enum.find(preview.columns, &(&1.name == "label")).data_type == "citext"
+    end
+
+    test "varchar and fixed-width character columns are searchable" do
+      Fixtures.sql!(
+        "CREATE TABLE pk_db_chars (id int PRIMARY KEY, label varchar(50), code char(20))"
+      )
+
+      Fixtures.sql!("INSERT INTO pk_db_chars VALUES (1, 'varchar-match', 'char-match')")
+
+      for term <- ["varchar-match", "char-match"] do
+        assert [%{"id" => 1}] =
+                 PhoenixKitDb.table_preview("public", "pk_db_chars", %{search: term}).rows
+      end
+    end
+
+    test "searching a table with only masked or JSON columns returns no matches" do
+      Fixtures.sql!(
+        "CREATE TABLE pk_db_unsearchable (id int PRIMARY KEY, signing_key text, doc jsonb)"
+      )
+
+      Fixtures.sql!(~s|INSERT INTO pk_db_unsearchable VALUES (1, 'LEAK', '{"pwd":"LEAK"}')|)
+      assert [_] = PhoenixKitDb.table_preview("public", "pk_db_unsearchable").rows
+
+      for term <- ["LEAK", "anything"] do
+        preview = PhoenixKitDb.table_preview("public", "pk_db_unsearchable", %{search: term})
+        assert preview.rows == []
+        assert preview.row_count == 0
+      end
+    end
+
+    test "unsupported column names do not raise while searching a supported table" do
+      Fixtures.sql!(
+        ~s|CREATE TABLE pk_db_column_names (id int PRIMARY KEY, "odd-name" text, label text)|
+      )
+
+      Fixtures.sql!("INSERT INTO pk_db_column_names VALUES (1, 'odd', 'findable')")
+
+      assert [%{"odd-name" => "odd"}] =
+               PhoenixKitDb.table_preview("public", "pk_db_column_names", %{search: "findable"}).rows
+    end
+
+    test "uppercase key/value columns cannot be searched for masked secrets" do
+      Fixtures.sql!(
+        ~s|CREATE TABLE pk_db_upper (id int PRIMARY KEY, "Key" text, "Value" varchar(50))|
+      )
+
+      Fixtures.sql!("INSERT INTO pk_db_upper VALUES (1, 'pwd', 'LEAK-uppercase')")
+      assert [%{"Value" => masked}] = PhoenixKitDb.table_preview("public", "pk_db_upper").rows
+      assert masked == Cells.masked_placeholder()
+
+      assert [] ==
+               PhoenixKitDb.table_preview("public", "pk_db_upper", %{search: "LEAK-uppercase"}).rows
+    end
+
     setup do
       Fixtures.create_secrets_table()
       :ok

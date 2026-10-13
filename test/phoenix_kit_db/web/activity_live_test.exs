@@ -442,6 +442,33 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
   end
 
   describe "controls" do
+    test "opening Activity does not start watching the settings table", %{conn: conn} do
+      {:ok, _view, _html} = live(conn, "/en/admin/db/activity")
+      refute PhoenixKitDb.has_trigger?("public", "phoenix_kit_settings")
+    end
+
+    test "Clear discards pending events and the next event still flushes", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      notify(view, "pending", "INSERT", nil)
+      view |> element(~s|button[phx-click="clear_log"]|) |> render_click()
+      flush(view)
+      assert assigns(view).activity_log == []
+      notify(view, "later", "INSERT", nil)
+      flush(view)
+      assert [%{table: "later"}] = assigns(view).activity_log
+    end
+
+    test "changing the filter drops pending events from the previous filter", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      notify(view, "old_filter", "INSERT", nil)
+      view |> form("#activity-filters", %{"operation" => "DELETE"}) |> render_change()
+      flush(view)
+      assert assigns(view).activity_log == []
+      notify(view, "new_filter", "DELETE", nil)
+      flush(view)
+      assert [%{table: "new_filter", operation: "DELETE"}] = assigns(view).activity_log
+    end
+
     test "toggle_pause flips the badge state", %{conn: conn} do
       {:ok, view, html} = live(conn, "/en/admin/db/activity")
 

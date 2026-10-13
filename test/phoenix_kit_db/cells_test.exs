@@ -15,7 +15,7 @@ defmodule PhoenixKitDb.CellsTest do
       token TOKEN access_token refresh_token auth_token reset_token token_expires_at
       api_key API_KEY apikey ApiKey private_key credential credentials aws_credentials
       salt password_salt content_hash file_hash hashed_token encrypted_value
-      encrypted_data access_key passphrase
+      encrypted_data access_key passphrase pwd PWD signing_key encryption_key auth_key
     )
 
     @shown ~w(
@@ -45,6 +45,17 @@ defmodule PhoenixKitDb.CellsTest do
   end
 
   describe "sanitize_row/2" do
+    test "uppercase key/value columns follow the same masking and search rule" do
+      assert Cells.sanitize_row(%{"Key" => "signing_key", "Value" => "LEAK"}) == %{
+               "Key" => "signing_key",
+               "Value" => Cells.masked_placeholder()
+             }
+
+      refute Cells.searchable_column?("Value", ["Key", "Value"])
+      refute Cells.searchable_column?("encryption_key", ["encryption_key"])
+      assert Cells.searchable_column?("Value", ["Value"])
+    end
+
     test "replaces every non-null secret value with the placeholder, whatever its type" do
       row = %{
         "hashed_password" => "LEAK-text",

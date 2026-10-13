@@ -55,21 +55,14 @@ defmodule PhoenixKitDb.Web.ShowLive do
     preview = PhoenixKitDb.table_preview(schema, table, %{page: page, per_page: per_page})
 
     if preview.columns == [] do
-      # Either the schema/table contains unsafe characters, or the
-      # table doesn't exist. Bail to /admin/db with a flash rather than
-      # render an empty grid.
-      {:noreply,
-       socket
-       |> put_flash(
-         :error,
-         gettext("Table %{schema}.%{table} not found", schema: schema, table: table)
-       )
-       |> push_navigate(to: Paths.index())}
+      {:noreply, table_not_found(socket)}
     else
       {:noreply,
        socket
        |> assign(:per_page, per_page)
        |> assign(:preview, preview)
+       |> assign(:highlighted_rows, [])
+       |> put_private(:highlight_ref, nil)
        |> setup_live_updates()}
     end
   end
@@ -146,27 +139,35 @@ defmodule PhoenixKitDb.Web.ShowLive do
         per_page: socket.assigns.per_page
       })
 
-    {added_count, removed_count, changed_on_page} = detect_changes(old_preview, new_preview)
+    if new_preview.columns == [] do
+      {:noreply, table_not_found(socket)}
+    else
+      {added_count, removed_count, changed_on_page} = detect_changes(old_preview, new_preview)
+      highlighted = find_new_or_changed_rows(old_preview, new_preview)
+      ref = make_ref()
 
-    highlighted = find_new_or_changed_rows(old_preview, new_preview)
+      socket =
+        socket
+        |> add_change_notification(added_count, removed_count, changed_on_page)
+        |> assign(:preview, new_preview)
+        |> assign(:highlighted_rows, highlighted)
+        |> put_private(:highlight_ref, ref)
 
-    socket = add_change_notification(socket, added_count, removed_count, changed_on_page)
+      if highlighted != [] do
+        Process.send_after(self(), {:clear_highlights, ref}, @highlight_ms)
+      end
 
-    socket =
-      socket
-      |> assign(:preview, new_preview)
-      |> assign(:highlighted_rows, highlighted)
-
-    if highlighted != [] do
-      Process.send_after(self(), :clear_highlights, @highlight_ms)
+      {:noreply, socket}
     end
-
-    {:noreply, socket}
   end
 
   @impl true
-  def handle_info(:clear_highlights, socket) do
-    {:noreply, assign(socket, :highlighted_rows, [])}
+  def handle_info({:clear_highlights, ref}, socket) do
+    if socket.private[:highlight_ref] == ref do
+      {:noreply, assign(socket, :highlighted_rows, [])}
+    else
+      {:noreply, socket}
+    end
   end
 
   # Defensive catch-all so a stray PubSub broadcast can't crash the LV.
@@ -175,6 +176,18 @@ defmodule PhoenixKitDb.Web.ShowLive do
   def handle_info(msg, socket) do
     Logger.debug("[#{inspect(__MODULE__)}] Unhandled info: #{inspect(msg)}")
     {:noreply, socket}
+  end
+
+  defp table_not_found(socket) do
+    socket
+    |> put_flash(
+      :error,
+      gettext("Table %{schema}.%{table} not found",
+        schema: socket.assigns.schema,
+        table: socket.assigns.table
+      )
+    )
+    |> push_navigate(to: Paths.index())
   end
 
   defp schedule_debounced_refresh(socket) do

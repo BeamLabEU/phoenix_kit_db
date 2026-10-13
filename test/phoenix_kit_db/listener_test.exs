@@ -60,20 +60,23 @@ defmodule PhoenixKitDb.ListenerTest do
       end
     end
 
-    test "schemas containing dots (uncommon but legal) split on first dot only", %{pid: pid} do
-      # `String.split(_, ".", parts: 2)` keeps the rest joined — so a
-      # table name like "weird.dotted" still parses as schema=public,
-      # table="weird.dotted". Pin this so a future refactor doesn't
-      # silently break the parse.
+    test "rejects unsupported names and operations", %{pid: pid} do
       PubSub.subscribe(PubSub.topic_all())
 
-      send(
-        pid,
-        {:notification, self(), make_ref(), "phoenix_kit_db_changes",
-         "public.weird.name:INSERT:1"}
-      )
+      for payload <- [
+            "public.weird.name:INSERT:1",
+            "public.users:BOGUS:1",
+            ".users:UPDATE:1",
+            "public.:INSERT:1",
+            "public.users\n:UPDATE:1",
+            nil
+          ] do
+        send(pid, {:notification, self(), make_ref(), "phoenix_kit_db_changes", payload})
+      end
 
-      assert_receive {:table_changed, "public", "weird.name", "INSERT", "1"}, 500
+      :sys.get_state(pid)
+      refute_receive {:table_changed, _, _, _, _}, 100
+      assert Process.alive?(pid)
     end
   end
 

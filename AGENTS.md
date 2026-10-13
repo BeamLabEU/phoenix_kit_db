@@ -161,7 +161,8 @@ Repo-local aliases and details:
   is the placeholder before it reaches an assign, the HTML or a diff. Any new
   code path that reads rows must go through it. The same name rule masks keys
   inside JSON values and, when a row's `key` / `name` reads as a secret, that
-  row's `value*` columns.
+  row's `value*` columns. The `key` / `name` / `value*` column-name checks are
+  case-insensitive too.
 - **Row search reads nothing masking can hide**, or a hit on a masked row
   confirms a guess at the hidden value. `Cells.searchable_column?/2` is the
   one rule, built on the same name rule and key/value column names as
@@ -180,7 +181,8 @@ Repo-local aliases and details:
   loading in both doubles every query. The LiveView tests count the queries.
 - **A row total above 100,000 (planner estimate) is the estimate**, shown as
   approximate, and no `COUNT(*)` runs. An estimated total never feeds the
-  "N rows added/removed" flash.
+  "N rows added/removed" flash. Requested pages are clamped to the last
+  available page before querying their rows.
 - **A `<select>` that filters lives inside a `<.form phx-change=...>`.** The
   LiveView client sends no change event for an input outside a form. Tests
   drive it with `form/3 |> render_change`, never
@@ -248,9 +250,11 @@ Repo-local aliases and details:
   render, so a bogus identifier never
   leaks a subscription; a broadcast in that gap is dropped and the next
   `:table_changed` catches the LV up. ActivityLive calls
-  `ensure_trigger("public", "phoenix_kit_settings")` on mount so the
-  notification function is `CREATE OR REPLACE`d with the current payload
-  format.
+  `ensure_notify_function/0` on mount without watching an extra table.
+  Function installation/upgrades check `pg_proc.prosrc`
+  and only replace an outdated body, under a transaction advisory lock and the
+  same DDL lock timeout. Recheck the body after taking the lock; unchanged
+  functions do not acquire it.
 - **`handle_info/2` catch-all:** every LV and the Listener has a defensive
   catch-all that logs at `:debug` and returns `{:noreply, ...}`. Never silent.
 - **Core pin keeps the compound `>= 2.38.0 and < 3.0.0` form.**
@@ -321,7 +325,8 @@ priv/gettext/                          default.pot + en, et, ru catalogues
 Public API in `PhoenixKitDb`: `database_stats/0`, `list_tables/1`,
 `list_table_names/0`, `table_preview/3`, `fetch_row/3`, `ensure_trigger/2`,
 `remove_trigger/2`, `has_trigger?/2`, `list_triggered_tables/0`,
-`remove_all_triggers/0`, `translatable_labels/0`, `notify_channel/0`.
+`remove_all_triggers/0`, `ensure_notify_function/0`, `translatable_labels/0`,
+`notify_channel/0`.
 `children/0` returns `[PhoenixKitDb.Listener]`, which the host's
 `PhoenixKit.Supervisor` starts at boot whether or not the module is enabled.
 `Listener.connection_config/1` derives the notification connection from the
@@ -338,7 +343,7 @@ bundle reaches consumers.
 | Notification function | `phoenix_kit_notify_table_change()` | plpgsql; picks the row PK as `uuid`, then `id`, then empty; `pg_notify`s on the channel |
 | Channel | `phoenix_kit_db_changes` | `notify_channel/0` |
 | Per-table trigger | `phoenix_kit_db_change_<schema>_<table>` | AFTER INSERT OR UPDATE OR DELETE, FOR EACH ROW; installed lazily on first Show view; a name past 63 bytes is cut and ends in `_<8 hex>`; removed by `disable_system/0` |
-| Payload | `schema.table:OPERATION:row_id` | `row_id` is `""` when the table has neither `uuid` nor `id` |
+| Payload | `schema.table:OPERATION:row_id` | `row_id` is `""` when the table has neither `uuid` nor `id`, or the full payload would reach 8,000 bytes; IDs are never truncated |
 
 ### PubSub (via `PhoenixKit.PubSub.Manager`)
 

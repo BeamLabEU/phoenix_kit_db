@@ -249,6 +249,42 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
   end
 
   describe "page markers" do
+    test "deleting the last page reloads the nearest remaining page", %{conn: conn} do
+      Fixtures.sql!("CREATE TABLE pk_db_pages (id int PRIMARY KEY)")
+      Fixtures.sql!("INSERT INTO pk_db_pages SELECT generate_series(1, 11)")
+      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_pages?per_page=10&page=2")
+      Fixtures.sql!("DELETE FROM pk_db_pages WHERE id = 11")
+      send(view.pid, :debounced_refresh)
+      assert assigns(view).preview.page == 1
+      assert length(assigns(view).preview.rows) == 10
+    end
+
+    test "a dropped table redirects on live refresh", %{conn: conn} do
+      create_rows_table()
+      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      Fixtures.sql!("DROP TABLE pk_db_rows")
+      send(view.pid, :debounced_refresh)
+      assert_redirect(view, "/en/admin/db")
+    end
+
+    test "an old highlight timer cannot clear a newer refresh", %{conn: conn} do
+      create_rows_table()
+      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      Fixtures.sql!("UPDATE pk_db_rows SET label = 'first edit'")
+      send(view.pid, :debounced_refresh)
+      render(view)
+      old_ref = :sys.get_state(view.pid).socket.private.highlight_ref
+      Fixtures.sql!("UPDATE pk_db_rows SET label = 'second edit'")
+      send(view.pid, :debounced_refresh)
+      render(view)
+      new_ref = :sys.get_state(view.pid).socket.private.highlight_ref
+      assert old_ref != new_ref
+      send(view.pid, {:clear_highlights, old_ref})
+      assert has_element?(view, "tr.animate-highlight")
+      send(view.pid, {:clear_highlights, new_ref})
+      refute has_element?(view, "tr.animate-highlight")
+    end
+
     test "page_markers/1 lists every page while they fit" do
       assert ShowLive.page_markers(1) == [1]
       assert ShowLive.page_markers(7) == Enum.to_list(1..7)
@@ -344,7 +380,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       assert texts(render(view), "#flash-info") == ["Data updated"]
       refute assigns(view).refresh_scheduled
 
-      send(view.pid, :clear_highlights)
+      send(view.pid, {:clear_highlights, :sys.get_state(view.pid).socket.private.highlight_ref})
       refute has_element?(view, "tr.animate-highlight")
     end
 

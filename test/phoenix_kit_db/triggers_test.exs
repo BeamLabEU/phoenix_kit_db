@@ -62,6 +62,8 @@ defmodule PhoenixKitDb.TriggersTest do
 
       assert result == :ok
       assert QueryCounter.count(statements, "CREATE TRIGGER") == 0
+      assert QueryCounter.count(statements, "CREATE OR REPLACE FUNCTION") == 0
+      assert QueryCounter.count(statements, "pg_advisory_xact_lock") == 0
       assert length(triggers_on("pk_db_trg")) == 1
     end
 
@@ -84,6 +86,22 @@ defmodule PhoenixKitDb.TriggersTest do
       assert {:error, %Postgrex.Error{}} = PhoenixKitDb.ensure_trigger("public", "pk_db_absent")
       refute PhoenixKitDb.has_trigger?("public", "pk_db_absent")
     end
+  end
+
+  test "a stale notify function is updated without installing a settings trigger" do
+    Fixtures.sql!(
+      "CREATE FUNCTION #{@function}() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql"
+    )
+
+    assert :ok = PhoenixKitDb.ensure_notify_function()
+    assert PhoenixKitDb.list_triggered_tables() == []
+
+    assert %{rows: [[body]]} =
+             Fixtures.sql!(
+               "SELECT prosrc FROM pg_proc WHERE oid = '#{@function}()'::regprocedure"
+             )
+
+    assert body =~ "octet_length"
   end
 
   describe "trigger names past the 63-byte identifier limit" do

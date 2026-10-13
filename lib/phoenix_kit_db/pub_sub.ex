@@ -24,7 +24,8 @@ defmodule PhoenixKitDb.PubSub do
   Messages are `{:table_changed, schema, table, operation, row_id}`
   tuples. `operation` is `"INSERT"` / `"UPDATE"` / `"DELETE"`; a malformed
   payload is dropped by the Listener and never broadcast. `row_id` may be
-  `nil` when the underlying row has neither a `uuid` nor an `id` column.
+  `nil` when the underlying row has neither a `uuid` nor an `id` column,
+  the ID is null/empty, or it would make the notification reach 8,000 bytes.
   """
 
   alias PhoenixKit.PubSub.Manager

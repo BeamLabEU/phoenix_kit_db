@@ -53,6 +53,13 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
   end
 
   describe "search" do
+    test "a search for the literal 1 stays in the URL", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/db")
+      view |> form("#db-table-search", %{"search" => "1"}) |> render_change()
+      assert_patch(view, "/en/admin/db?search=1")
+      assert assigns(view).search == "1"
+    end
+
     test "filtering by schema patches the URL with ?search=", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/db")
 

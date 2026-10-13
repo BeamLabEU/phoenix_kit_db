@@ -40,7 +40,6 @@ defmodule PhoenixKitDb.Web.ActivityLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Listener.subscribe_all()
-      # Make sure the trigger function exists with the row_id payload format.
       update_trigger_function()
     end
 
@@ -125,6 +124,7 @@ defmodule PhoenixKitDb.Web.ActivityLive do
       |> assign(:activity_log, [])
       |> assign(:row_states, %{})
       |> assign(:skipped, 0)
+      |> discard_buffer()
 
     {:noreply, socket}
   end
@@ -134,7 +134,13 @@ defmodule PhoenixKitDb.Web.ActivityLive do
     {:noreply,
      socket
      |> assign(:filter_table, table_filter(params["table"]))
-     |> assign(:filter_operation, operation_filter(params["operation"]))}
+     |> assign(:filter_operation, operation_filter(params["operation"]))
+     |> discard_buffer()}
+  end
+
+  defp discard_buffer(socket) do
+    buffer = socket.private[@buffer_key]
+    put_private(socket, @buffer_key, %{@empty_buffer | scheduled?: buffer.scheduled?})
   end
 
   defp table_filter(table) when is_binary(table) and table != "", do: table
@@ -200,9 +206,13 @@ defmodule PhoenixKitDb.Web.ActivityLive do
   end
 
   defp update_trigger_function do
-    # CREATE OR REPLACE the function with the latest payload format.
-    # phoenix_kit_settings is always present in a host with PhoenixKit installed.
-    PhoenixKitDb.ensure_trigger("public", "phoenix_kit_settings")
+    case PhoenixKitDb.ensure_notify_function() do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("[PhoenixKitDb] notify function update failed: #{inspect(reason)}")
+    end
   end
 
   defp build_entry({schema, table, operation, row_id}, row_states) do

@@ -103,7 +103,7 @@ defmodule PhoenixKitDb.Web.IndexLive do
 
   defp parse_int(value, default) when is_binary(value) do
     case Integer.parse(value) do
-      {int, _} when int > 0 -> int
+      {int, ""} when int > 0 -> int
       _ -> default
     end
   end
@@ -120,7 +120,9 @@ defmodule PhoenixKitDb.Web.IndexLive do
         "page" => socket.assigns.tables.page
       }
       |> Map.merge(overrides)
-      |> Enum.reject(fn {_k, v} -> v in [nil, "", 1, "1"] end)
+      |> Enum.reject(fn {key, value} ->
+        value in [nil, ""] or (key == "page" and value in [1, "1"])
+      end)
       |> Map.new()
 
     base = Paths.index()

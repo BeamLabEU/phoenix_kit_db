@@ -25,7 +25,7 @@ defmodule PhoenixKitDb.Cells do
 
   @secret_fragments ~w(
     password passwd passphrase secret token api_key apikey access_key
-    private_key credential salt
+    private_key signing_key encryption_key auth_key pwd credential salt
   )
   @secret_prefixes ~w(hashed_ encrypted_)
   @secret_suffixes ~w(_hash)
@@ -88,13 +88,15 @@ defmodule PhoenixKitDb.Cells do
   # `value` column and say what it is in the row's own `key`. When that key
   # reads as a secret, the row's value columns are masked with it.
   defp keyed_secret?(row) do
-    Enum.any?(@key_columns, fn column ->
-      key = Map.get(row, column)
-      is_binary(key) and secret_column?(key)
+    Enum.any?(row, fn {column, key} ->
+      is_binary(column) and String.downcase(column) in @key_columns and
+        is_binary(key) and secret_column?(key)
     end)
   end
 
-  defp value_column?(name) when is_binary(name), do: String.starts_with?(name, "value")
+  defp value_column?(name) when is_binary(name),
+    do: name |> String.downcase() |> String.starts_with?("value")
+
   defp value_column?(_name), do: false
 
   @doc """
@@ -110,7 +112,8 @@ defmodule PhoenixKitDb.Cells do
   @spec searchable_column?(String.t(), [String.t()]) :: boolean()
   def searchable_column?(name, column_names) when is_binary(name) and is_list(column_names) do
     not secret_column?(name) and
-      not (value_column?(name) and Enum.any?(@key_columns, &(&1 in column_names)))
+      not (value_column?(name) and
+             Enum.any?(column_names, &(String.downcase(&1) in @key_columns)))
   end
 
   defp sanitize_value(_name, nil, _kind), do: nil
