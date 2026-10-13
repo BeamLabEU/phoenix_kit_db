@@ -2,17 +2,36 @@ defmodule PhoenixKitDb.Web.ActivityLive do
   @moduledoc """
   Live activity monitor for database changes.
 
-  Shows real-time INSERT, UPDATE, DELETE operations across all tables
-  with full row data and per-key diff highlighting.
+  Shows real-time INSERT, UPDATE, DELETE operations with row data and
+  per-key diff highlighting, for every table that has a notification trigger.
+  A table gets its trigger the first time its Show page is opened, so a table
+  nobody has opened does not appear here.
   """
 
   use PhoenixKitWeb, :live_view
+  use Gettext, backend: PhoenixKitDb.Gettext
 
   alias PhoenixKit.Utils.Date, as: UtilsDate
   alias PhoenixKitDb
+  alias PhoenixKitDb.Cells
   alias PhoenixKitDb.Listener
 
   require Logger
+
+  @operations ~w(INSERT UPDATE DELETE)
+  @max_log 100
+
+  # Notifications are buffered and turned into log entries on a timer, never
+  # one by one. An entry costs a row lookup and a re-render; a bulk update
+  # sends one notification per row, and paying that price per message leaves
+  # the mailbox so far behind that a click on Pause waits for all of it.
+  # Buffering a message is constant work, so the mailbox drains at once and
+  # the click is handled next. The buffer holds no more than the log can
+  # show; past that the oldest buffered event is dropped and counted.
+  @max_buffered @max_log
+  @flush_interval_ms 250
+  @buffer_key :phoenix_kit_db_activity_buffer
+  @empty_buffer %{events: [], count: 0, dropped: 0, scheduled?: false}
 
   @impl true
   def mount(params, _session, socket) do
@@ -33,36 +52,43 @@ defmodule PhoenixKitDb.Web.ActivityLive do
 
     socket =
       socket
-      |> assign(:page_section, Gettext.gettext(PhoenixKitWeb.Gettext, "DB"))
+      |> assign(:page_section, gettext("DB"))
       |> assign(:page_section_path, PhoenixKitDb.Paths.index())
       |> assign(:page_crumbs, [])
-      |> assign(:page_title, Gettext.gettext(PhoenixKitWeb.Gettext, "Activity"))
+      |> assign(:page_title, gettext("Activity"))
       |> assign(:activity_log, [])
       |> assign(:paused, false)
       |> assign(:filter_table, initial_table_filter)
       |> assign(:filter_operation, nil)
       |> assign(:tables, tables)
       |> assign(:row_states, %{})
+      |> assign(:skipped, 0)
+      |> put_private(@buffer_key, @empty_buffer)
 
     {:ok, socket}
   end
 
+  # The whole list, not a page of it: `list_tables/1` clamps its page size, and
+  # a table missing here cannot be picked, nor shown as selected by a
+  # `?table=` link.
   defp load_tables do
-    result = PhoenixKitDb.list_tables(%{page: 1, per_page: 1000})
-
-    result.entries
-    |> Enum.map(fn t -> "#{t.schema}.#{t.name}" end)
+    PhoenixKitDb.list_table_names()
+    |> Enum.map(fn {schema, table} -> "#{schema}.#{table}" end)
     |> Enum.sort()
   end
 
   @impl true
   def handle_info({:table_changed, schema, table, operation, row_id}, socket) do
-    if socket.assigns.paused do
-      {:noreply, socket}
+    if not socket.assigns.paused and matches_filters?(socket, schema, table, operation) do
+      {:noreply, buffer_event(socket, {schema, table, operation, row_id})}
     else
-      socket = add_activity_entry(socket, schema, table, operation, row_id)
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_info(:flush_activity, socket) do
+    {:noreply, flush_buffer(socket)}
   end
 
   @impl true
@@ -71,9 +97,21 @@ defmodule PhoenixKitDb.Web.ActivityLive do
     {:noreply, socket}
   end
 
+  # Pausing discards what is still buffered, so nothing is added to the log
+  # after the click; the discarded events are counted as skipped.
   @impl true
   def handle_event("toggle_pause", _, socket) do
-    {:noreply, assign(socket, :paused, !socket.assigns.paused)}
+    if socket.assigns.paused do
+      {:noreply, assign(socket, :paused, false)}
+    else
+      buffer = socket.private[@buffer_key]
+
+      {:noreply,
+       socket
+       |> put_private(@buffer_key, %{@empty_buffer | scheduled?: buffer.scheduled?})
+       |> assign(:skipped, socket.assigns.skipped + buffer.count + buffer.dropped)
+       |> assign(:paused, true)}
+    end
   end
 
   @impl true
@@ -82,20 +120,79 @@ defmodule PhoenixKitDb.Web.ActivityLive do
       socket
       |> assign(:activity_log, [])
       |> assign(:row_states, %{})
+      |> assign(:skipped, 0)
 
     {:noreply, socket}
   end
 
   @impl true
-  def handle_event("filter_table", %{"table" => table}, socket) do
-    filter = if table == "", do: nil, else: table
-    {:noreply, assign(socket, :filter_table, filter)}
+  def handle_event("filter", params, socket) do
+    {:noreply,
+     socket
+     |> assign(:filter_table, table_filter(params["table"]))
+     |> assign(:filter_operation, operation_filter(params["operation"]))}
   end
 
-  @impl true
-  def handle_event("filter_operation", %{"operation" => operation}, socket) do
-    filter = if operation == "", do: nil, else: operation
-    {:noreply, assign(socket, :filter_operation, filter)}
+  defp table_filter(table) when is_binary(table) and table != "", do: table
+  defp table_filter(_table), do: nil
+
+  defp operation_filter(operation) when operation in @operations, do: operation
+  defp operation_filter(_operation), do: nil
+
+  # The buffer lives in `socket.private`, not in an assign: an assign changed
+  # on every message would make every message a render.
+  defp buffer_event(socket, event) do
+    buffer = socket.private[@buffer_key]
+
+    buffer =
+      if buffer.count >= @max_buffered do
+        %{
+          buffer
+          | events: [event | List.delete_at(buffer.events, -1)],
+            dropped: buffer.dropped + 1
+        }
+      else
+        %{buffer | events: [event | buffer.events], count: buffer.count + 1}
+      end
+
+    put_private(socket, @buffer_key, schedule_flush(buffer))
+  end
+
+  defp schedule_flush(%{scheduled?: true} = buffer), do: buffer
+
+  defp schedule_flush(buffer) do
+    Process.send_after(self(), :flush_activity, @flush_interval_ms)
+    %{buffer | scheduled?: true}
+  end
+
+  defp flush_buffer(socket) do
+    buffer = socket.private[@buffer_key]
+    socket = put_private(socket, @buffer_key, @empty_buffer)
+
+    # Buffered newest first; entries are built oldest first so each row's
+    # diff is computed against the state the event before it left behind.
+    {entries, row_states} =
+      buffer.events
+      |> Enum.reverse()
+      |> Enum.reduce({[], socket.assigns.row_states}, fn event, {entries, row_states} ->
+        {entry, row_states} = build_entry(event, row_states)
+        {[entry | entries], row_states}
+      end)
+
+    activity_log = Enum.take(entries ++ socket.assigns.activity_log, @max_log)
+
+    socket
+    |> assign(:activity_log, activity_log)
+    |> assign(:row_states, prune_row_states(row_states, activity_log))
+    |> assign(:skipped, socket.assigns.skipped + buffer.dropped)
+  end
+
+  # A remembered row only serves the diff of a later event for the same row,
+  # and it is kept only while an entry for that row is still on the page.
+  defp prune_row_states(row_states, activity_log) do
+    visible = MapSet.new(activity_log, &{&1.schema, &1.table, &1.row_id})
+
+    Map.filter(row_states, fn {row_key, _row} -> MapSet.member?(visible, row_key) end)
   end
 
   defp update_trigger_function do
@@ -104,18 +201,10 @@ defmodule PhoenixKitDb.Web.ActivityLive do
     PhoenixKitDb.ensure_trigger("public", "phoenix_kit_settings")
   end
 
-  defp add_activity_entry(socket, schema, table, operation, row_id) do
-    if matches_filters?(socket, schema, table, operation) do
-      append_activity_entry(socket, schema, table, operation, row_id)
-    else
-      socket
-    end
-  end
-
-  defp append_activity_entry(socket, schema, table, operation, row_id) do
+  defp build_entry({schema, table, operation, row_id}, row_states) do
     row_key = {schema, table, row_id}
     row_data = fetch_row_data(schema, table, operation, row_id)
-    previous_state = Map.get(socket.assigns.row_states, row_key)
+    previous_state = Map.get(row_states, row_key)
     {changed_keys, new_keys} = compute_keys(operation, row_data, previous_state)
 
     entry = %{
@@ -130,12 +219,7 @@ defmodule PhoenixKitDb.Web.ActivityLive do
       new_keys: new_keys
     }
 
-    row_states = update_row_states(socket.assigns.row_states, row_key, row_data, row_id)
-    activity_log = [entry | socket.assigns.activity_log] |> Enum.take(100)
-
-    socket
-    |> assign(:activity_log, activity_log)
-    |> assign(:row_states, row_states)
+    {entry, update_row_states(row_states, row_key, row_data, row_id)}
   end
 
   defp fetch_row_data(_schema, _table, op, _row_id) when op not in ["INSERT", "UPDATE"], do: nil
@@ -209,18 +293,12 @@ defmodule PhoenixKitDb.Web.ActivityLive do
   def operation_badge_class("DELETE"), do: "badge-error"
   def operation_badge_class(_), do: "badge-ghost"
 
-  def format_value(value) when is_map(value), do: Jason.encode!(value, pretty: true)
-  def format_value(value) when is_list(value), do: inspect(value, pretty: true)
+  # Text for one cell of an entry's row. `Cells.format/2` is total, which
+  # matters here more than anywhere: these rows come from arbitrary tables and
+  # a raise while rendering them takes the feed down.
+  def format_value(value), do: Cells.format(value, pretty: true)
 
-  def format_value(value) when is_binary(value) do
-    if String.valid?(value) do
-      if byte_size(value) > 200, do: String.slice(value, 0, 200) <> "...", else: value
-    else
-      inspect(value)
-    end
-  end
-
-  def format_value(value), do: inspect(value)
+  def collection?(value), do: Cells.collection?(value)
 
   def key_changed?(entry, key), do: MapSet.member?(entry.changed_keys, key)
   def key_new?(entry, key), do: MapSet.member?(entry.new_keys, key)

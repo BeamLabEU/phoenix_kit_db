@@ -187,7 +187,11 @@
       const focusPercent = (currentPage - 1) / (this.totalPages - 1);
 
       const markerAreaHeight = this.pageMarkers.offsetHeight || this.scrollbar.clientHeight;
-      const pixelsPerPage = markerAreaHeight / this.totalPages;
+      // The server renders a bounded number of markers, not one per page, so
+      // density and falloff are measured in markers. With one marker per page
+      // `step` is 1 and both reduce to pages.
+      const pixelsPerPage = markerAreaHeight / markers.length;
+      const step = markers.length > 1 ? (this.totalPages - 1) / (markers.length - 1) : 1;
 
       const densityFactor = Math.min(Math.max((pixelsPerPage - 5) / 15, 0), 1);
       const effectStrength = 1 - densityFactor;
@@ -201,7 +205,7 @@
 
       markers.forEach(marker => {
         const page = parseInt(marker.dataset.page, 10);
-        const distance = Math.abs(page - currentPage);
+        const distance = Math.abs(page - currentPage) / step;
         const originalPos = (page - 1) / (this.totalPages - 1);
 
         let newPos = originalPos;

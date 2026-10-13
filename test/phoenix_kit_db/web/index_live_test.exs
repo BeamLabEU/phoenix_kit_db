@@ -6,10 +6,12 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
   alias PhoenixKitDb.PubSub
 
+  setup %{conn: conn} do
+    %{conn: put_test_scope(conn, fake_scope())}
+  end
+
   describe "mount" do
     test "renders the page heading and stats cards", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
-
       {:ok, _view, html} = live(conn, "/en/admin/db")
 
       # Heading + subtitle
@@ -25,16 +27,12 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
     end
 
     test "renders the search form", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
-
       {:ok, _view, html} = live(conn, "/en/admin/db")
 
       assert html =~ "Filter by schema or table name"
     end
 
     test "shows the Live Activity action button linking to /admin/db/activity", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
-
       {:ok, _view, html} = live(conn, "/en/admin/db")
 
       # Verify the link target is the activity subpath
@@ -42,8 +40,6 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
     end
 
     test "renders the pg_stat_user_tables list", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
-
       {:ok, _view, html} = live(conn, "/en/admin/db")
 
       # Page 1 alphabetically starts with the oban_* tables — pin one
@@ -55,76 +51,116 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
   describe "search" do
     test "filtering by schema patches the URL with ?search=", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
-
       {:ok, view, _html} = live(conn, "/en/admin/db")
 
-      result = render_change(view, "search", %{"search" => "phoenix_kit_settings"})
+      result =
+        view
+        |> form("#db-table-search", %{"search" => "phoenix_kit_settings"})
+        |> render_change()
 
       # Filter shows in rendered output (the search input keeps its value)
       assert result =~ ~s(value="phoenix_kit_settings")
       # Page-1 default is dropped from the URL; only search remains.
       assert_patch(view, "/en/admin/db?search=phoenix_kit_settings")
+      assert texts(result, "tbody td a.font-semibold") == ["public.phoenix_kit_settings"]
     end
 
     test "clearing the search returns to the unfiltered URL", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
-
       {:ok, view, _html} = live(conn, "/en/admin/db?search=phoenix_kit_settings")
 
-      render_change(view, "search", %{"search" => ""})
+      view |> form("#db-table-search", %{"search" => ""}) |> render_change()
 
       assert_patch(view, "/en/admin/db")
     end
   end
 
+  describe "the page loads its data once per render pass" do
+    test "one table listing for the dead render and one for the connected one", %{conn: conn} do
+      {{:ok, view, _html}, statements} =
+        QueryCounter.capture(fn -> live(conn, "/en/admin/db") end)
+
+      listings = Enum.filter(statements, &(&1 =~ "pg_stat_user_tables" and &1 =~ "LIMIT $"))
+      assert length(listings) == 2
+
+      {_html, statements} =
+        QueryCounter.capture(fn ->
+          view |> form("#db-table-search", %{"search" => "oban"}) |> render_change()
+        end)
+
+      listings = Enum.filter(statements, &(&1 =~ "pg_stat_user_tables" and &1 =~ "LIMIT $"))
+      assert length(listings) == 1
+    end
+  end
+
+  describe "tables this page cannot open" do
+    test "are not linked, and the page says how many were left out", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/db")
+      assert texts(html, "#db-hidden-tables") == []
+
+      Fixtures.sql!(~s|CREATE TABLE "pk_db-dash" (id int PRIMARY KEY)|)
+      Fixtures.sql!(~s|CREATE TABLE "pk_db.dot" (id int PRIMARY KEY)|)
+      Fixtures.sql!(~s|CREATE TABLE pk_db_fine (id int PRIMARY KEY)|)
+
+      {:ok, _view, html} = live(conn, "/en/admin/db?search=pk_db")
+
+      assert texts(html, "tbody td a.font-semibold") == ["public.pk_db_fine"]
+      assert [note] = texts(html, "#db-hidden-tables")
+      assert note =~ ~r/\A2 tables are not listed/
+    end
+  end
+
   describe "live updates" do
-    test ":table_changed messages are absorbed without crashing", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
-
+    test "a broadcast on topic_all reaches the page and schedules one refresh", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/db")
+      refute assigns(view).refresh_scheduled
 
-      # Drive a synthetic broadcast — the LV should schedule a debounced
-      # refresh and stay alive.
-      send(view.pid, {:table_changed, "public", "phoenix_kit_settings", "INSERT", "1"})
-      send(view.pid, {:table_changed, "public", "phoenix_kit_settings", "UPDATE", "1"})
+      # Nothing but the page's own subscription delivers this.
+      PubSub.broadcast(PubSub.topic_all(), {:table_changed, "public", "x", "INSERT", "1"})
+      PubSub.broadcast(PubSub.topic_all(), {:table_changed, "public", "x", "UPDATE", "1"})
 
-      # render/1 forces the LV to drain its mailbox; the catch-all
-      # absorbs anything unexpected.
-      html = render(view)
-      # Page 1 alphabetical entries persist after the synthetic refresh.
-      assert html =~ "oban_jobs"
+      assert assigns(view).refresh_scheduled
     end
 
-    test "subscribes to topic_all on connected mount", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+    test "a broadcast on a table topic does not reach the page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/db")
 
-      {:ok, _view, _html} = live(conn, "/en/admin/db")
+      PubSub.broadcast(
+        PubSub.topic_table("public", "x"),
+        {:table_changed, "public", "x", "INSERT", "1"}
+      )
 
-      # If subscription happened, broadcasting on topic_all should reach
-      # the LV process. We verify by subscribing the test process to
-      # the same topic and confirming the broadcast round-trips.
-      PubSub.subscribe(PubSub.topic_all())
-      PubSub.broadcast(PubSub.topic_all(), {:table_changed, "public", "x", "INSERT", "1"})
+      refute assigns(view).refresh_scheduled
+    end
 
-      assert_receive {:table_changed, "public", "x", "INSERT", "1"}, 500
+    test "the debounced refresh re-reads the table list and the stats", %{conn: conn} do
+      {:ok, view, html} = live(conn, "/en/admin/db?search=pk_db_fresh")
+
+      assert html =~ "No tables found."
+      tables_before = assigns(view).stats.table_count
+
+      Fixtures.sql!("CREATE TABLE pk_db_fresh (id int PRIMARY KEY)")
+      send(view.pid, {:table_changed, "public", "pk_db_fresh", "INSERT", "1"})
+      send(view.pid, :debounced_refresh)
+
+      html = render(view)
+
+      assert texts(html, "tbody td a.font-semibold") == ["public.pk_db_fresh"]
+      assert assigns(view).stats.table_count == tables_before + 1
+      refute assigns(view).refresh_scheduled
+      # The refresh keeps the search the page was opened with.
+      assert html =~ ~s(value="pk_db_fresh")
     end
   end
 
   describe "handle_info catch-all (defensive)" do
-    test "swallows unknown OTP messages without crashing", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
-
+    test "an unknown message changes nothing on the page", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/db")
+      before = render(view)
 
       send(view.pid, :some_unrelated_message)
       send(view.pid, {:tuple_with_no_matching_clause})
 
-      # Process must still be alive AND render its core content — the
-      # is_binary check alone would pass for any error page too.
-      html = render(view)
-      assert html =~ "Explore database tables"
-      assert Process.alive?(view.pid)
+      assert render(view) == before
     end
   end
 end

@@ -31,7 +31,7 @@ defmodule PhoenixKitDb.FetchRowTest do
 
       assert {:ok, row} = PhoenixKitDb.fetch_row("public", "phoenix_kit_settings", uuid)
       assert Map.has_key?(row, "key")
-      assert row["uuid"] == raw_uuid
+      assert row["uuid"] == uuid
     end
 
     test "an integer-shaped id is refused without querying and never raises" do

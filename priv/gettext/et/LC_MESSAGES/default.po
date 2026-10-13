@@ -1,0 +1,338 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: et\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:90
+#, elixir-autogen, elixir-format
+msgid "%{count} event skipped: changes arrived faster than this page can show them."
+msgid_plural "%{count} events skipped: changes arrived faster than this page can show them."
+msgstr[0] "%{count} sündmus jäi vahele: muudatusi tuli kiiremini, kui see leht jõuab näidata."
+msgstr[1] "%{count} sündmust jäi vahele: muudatusi tuli kiiremini, kui see leht jõuab näidata."
+
+#: lib/phoenix_kit_db/web/show_live.ex:311
+#, elixir-autogen, elixir-format
+msgid "%{count} row added"
+msgid_plural "%{count} rows added"
+msgstr[0] "%{count} rida lisatud"
+msgstr[1] "%{count} rida lisatud"
+
+#: lib/phoenix_kit_db/web/show_live.ex:317
+#, elixir-autogen, elixir-format
+msgid "%{count} row removed"
+msgid_plural "%{count} rows removed"
+msgstr[0] "%{count} rida eemaldatud"
+msgstr[1] "%{count} rida eemaldatud"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:113
+#, elixir-autogen, elixir-format
+msgid "%{count} table is not listed: its schema or table name has characters outside letters, digits and underscore, which this page cannot open."
+msgid_plural "%{count} tables are not listed: their schema or table names have characters outside letters, digits and underscore, which this page cannot open."
+msgstr[0] "%{count} tabelit ei kuvata: selle skeemi või tabeli nimes on märke peale tähtede, numbrite ja alakriipsu ning see leht ei saa seda avada."
+msgstr[1] "%{count} tabelit ei kuvata: nende skeemi või tabeli nimedes on märke peale tähtede, numbrite ja alakriipsu ning see leht ei saa neid avada."
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:191
+#, elixir-autogen, elixir-format
+msgid "(table may not have an 'id' column)"
+msgstr "(tabelil ei pruugi olla veergu 'id')"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:110
+#, elixir-autogen, elixir-format
+msgid "A table is watched from the first time its page is opened."
+msgstr "Tabelit jälgitakse alates selle lehe esmakordsest avamisest."
+
+#: lib/phoenix_kit_db.ex:217
+#: lib/phoenix_kit_db/web/activity_live.ex:58
+#, elixir-autogen, elixir-format
+msgid "Activity"
+msgstr "Tegevus"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:66
+#, elixir-autogen, elixir-format
+msgid "All"
+msgstr "Kõik"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:50
+#, elixir-autogen, elixir-format
+msgid "All tables"
+msgstr "Kõik tabelid"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:37
+#, elixir-autogen, elixir-format
+msgid "App data + indexes"
+msgstr "Rakenduse andmed + indeksid"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:25
+#, elixir-autogen, elixir-format
+msgid "Application tables"
+msgstr "Rakenduse tabelid"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:36
+#, elixir-autogen, elixir-format
+msgid "Clear"
+msgstr "Tühjenda"
+
+#: lib/phoenix_kit_db.ex:215
+#: lib/phoenix_kit_db/web/activity_live.ex:55
+#: lib/phoenix_kit_db/web/index_live.ex:31
+#: lib/phoenix_kit_db/web/index_live.html.heex:4
+#: lib/phoenix_kit_db/web/show_live.ex:35
+#, elixir-autogen, elixir-format
+msgid "DB"
+msgstr "Andmebaas"
+
+#: lib/phoenix_kit_db/web/show_live.ex:321
+#, elixir-autogen, elixir-format
+msgid "Data updated"
+msgstr "Andmed uuendatud"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:40
+#, elixir-autogen, elixir-format
+msgid "Database Size"
+msgstr "Andmebaasi maht"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:5
+#, elixir-autogen, elixir-format
+msgid "Explore database tables and their contents"
+msgstr "Sirvi andmebaasi tabeleid ja nende sisu"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:53
+#, elixir-autogen, elixir-format
+msgid "Filter by schema or table name"
+msgstr "Filtreeri skeemi või tabeli nime järgi"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:75
+#, elixir-autogen, elixir-format
+msgid "First page"
+msgstr "Esimene leht"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:42
+#, elixir-autogen, elixir-format
+msgid "Full pg_database_size"
+msgstr "Kogu pg_database_size"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:107
+#, elixir-autogen, elixir-format
+msgid "INSERT, UPDATE, and DELETE operations will appear here in real-time"
+msgstr "INSERT-, UPDATE- ja DELETE-operatsioonid ilmuvad siia reaalajas"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:108
+#, elixir-autogen, elixir-format
+msgid "Last page"
+msgstr "Viimane leht"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:14
+#: lib/phoenix_kit_db/web/show_live.html.heex:21
+#, elixir-autogen, elixir-format
+msgid "Live Activity"
+msgstr "Tegevus reaalajas"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:7
+#, elixir-autogen, elixir-format
+msgid "Live Database Activity"
+msgstr "Andmebaasi tegevus reaalajas"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Live updates are not available for this table right now. The rows below are current as of this page load; reload to try again."
+msgstr "Selle tabeli reaalajas uuendused pole praegu saadaval. Allolevad read on lehe laadimise hetke seisuga; uuesti proovimiseks laadi leht uuesti."
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:145
+#, elixir-autogen, elixir-format
+msgid "Next"
+msgstr "Järgmine"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:99
+#, elixir-autogen, elixir-format
+msgid "Next page"
+msgstr "Järgmine leht"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:144
+#, elixir-autogen, elixir-format
+msgid "No rows found."
+msgstr "Ridu ei leitud."
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:73
+#, elixir-autogen, elixir-format
+msgid "No tables found."
+msgstr "Tabeleid ei leitud."
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:62
+#, elixir-autogen, elixir-format
+msgid "Operation"
+msgstr "Operatsioon"
+
+#: lib/phoenix_kit_db.ex:216
+#, elixir-autogen, elixir-format
+msgid "Overview"
+msgstr "Ülevaade"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:122
+#: lib/phoenix_kit_db/web/show_live.html.heex:89
+#, elixir-autogen, elixir-format
+msgid "Page %{page} of %{total}"
+msgstr "Leht %{page} / %{total}"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Pause"
+msgstr "Peata"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:137
+#, elixir-autogen, elixir-format
+msgid "Prev"
+msgstr "Eelmine"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:84
+#, elixir-autogen, elixir-format
+msgid "Previous page"
+msgstr "Eelmine leht"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:30
+#, elixir-autogen, elixir-format
+msgid "Resume"
+msgstr "Jätka"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:189
+#, elixir-autogen, elixir-format
+msgid "Row data not available"
+msgstr "Rea andmed pole saadaval"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:185
+#, elixir-autogen, elixir-format
+msgid "Row deleted (data not available)"
+msgstr "Rida kustutatud (andmed pole saadaval)"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:28
+#: lib/phoenix_kit_db/web/index_live.html.heex:64
+#, elixir-autogen, elixir-format
+msgid "Rows"
+msgstr "Read"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:51
+#, elixir-autogen, elixir-format
+msgid "Search tables"
+msgstr "Otsi tabeleid"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:57
+#, elixir-autogen, elixir-format
+msgid "Show"
+msgstr "Näita"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:18
+#, elixir-autogen, elixir-format
+msgid "Showing changes to tables that have been opened in the DB explorer"
+msgstr "Kuvatakse nende tabelite muudatusi, mis on andmebaasi sirvijas avatud olnud"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:65
+#, elixir-autogen, elixir-format
+msgid "Size"
+msgstr "Maht"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Summed live tuples"
+msgstr "Elusate kirjete summa"
+
+#: lib/phoenix_kit_db.ex:218
+#: lib/phoenix_kit_db/web/activity_live.html.heex:46
+#: lib/phoenix_kit_db/web/index_live.html.heex:63
+#, elixir-autogen, elixir-format
+msgid "Table"
+msgstr "Tabel"
+
+#: lib/phoenix_kit_db/web/show_live.ex:65
+#, elixir-autogen, elixir-format
+msgid "Table %{schema}.%{table} not found"
+msgstr "Tabelit %{schema}.%{table} ei leitud"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:21
+#, elixir-autogen, elixir-format
+msgid "Tables"
+msgstr "Tabelid"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:35
+#, elixir-autogen, elixir-format
+msgid "Tables Size"
+msgstr "Tabelite maht"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:104
+#, elixir-autogen, elixir-format
+msgid "Waiting for database activity..."
+msgstr "Ootan andmebaasi tegevust..."
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:47
+#, elixir-autogen, elixir-format
+msgid "about %{count} row total (estimate)"
+msgid_plural "about %{count} rows total (estimate)"
+msgstr[0] "umbes %{count} rida kokku (hinnang)"
+msgstr[1] "umbes %{count} rida kokku (hinnang)"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:151
+#, elixir-autogen, elixir-format
+msgid "changed"
+msgstr "muudetud"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:80
+#, elixir-autogen, elixir-format
+msgid "event"
+msgid_plural "events"
+msgstr[0] "sündmus"
+msgstr[1] "sündmust"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:130
+#, elixir-autogen, elixir-format
+msgid "id:"
+msgstr "id:"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:148
+#, elixir-autogen, elixir-format
+msgid "new"
+msgstr "uus"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:158
+#: lib/phoenix_kit_db/web/show_live.html.heex:157
+#, elixir-autogen, elixir-format
+msgid "null"
+msgstr "null"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:65
+#, elixir-autogen, elixir-format
+msgid "per page"
+msgstr "lehel"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:7
+#, elixir-autogen, elixir-format
+msgid "row"
+msgid_plural "rows"
+msgstr[0] "rida"
+msgstr[1] "rida"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:53
+#, elixir-autogen, elixir-format
+msgid "row total"
+msgid_plural "rows total"
+msgstr[0] "rida kokku"
+msgstr[1] "rida kokku"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:125
+#, elixir-autogen, elixir-format
+msgid "table"
+msgid_plural "tables"
+msgstr[0] "tabel"
+msgstr[1] "tabelit"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:12
+#, elixir-autogen, elixir-format
+msgid "Paused — %{count} event captured"
+msgid_plural "Paused — %{count} events captured"
+msgstr[0] "Peatatud — jäädvustatud %{count} sündmus"
+msgstr[1] "Peatatud — jäädvustatud %{count} sündmust"

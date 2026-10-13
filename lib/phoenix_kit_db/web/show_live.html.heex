@@ -4,8 +4,7 @@
         {@schema}.{@table}
       </h1>
       <p class="text-sm text-base-content/60 mt-0.5">
-        <.formatted_number number={@preview.approx_rows} format={:short} /> {Gettext.ngettext(
-          PhoenixKitWeb.Gettext,
+        <.formatted_number number={@preview.approx_rows} format={:short} /> {ngettext(
           "row",
           "rows",
           @preview.approx_rows
@@ -19,26 +18,43 @@
         navigate={"#{PhoenixKitDb.Paths.activity()}?#{URI.encode_query(%{"table" => "#{@schema}.#{@table}"})}"}
         class="btn btn-ghost btn-sm"
       >
-        <.icon name="hero-signal" class="w-4 h-4 mr-2" /> {Gettext.gettext(
-          PhoenixKitWeb.Gettext,
-          "Live Activity"
-        )}
+        <.icon name="hero-signal" class="w-4 h-4 mr-2" /> {gettext("Live Activity")}
       </.link>
+    </div>
+
+    <div
+      :if={@live_updates == :unavailable}
+      id="db-live-updates-unavailable"
+      class="alert alert-warning mb-4 text-sm"
+    >
+      <.icon name="hero-exclamation-triangle" class="w-4 h-4" />
+      <span>
+        {gettext(
+          "Live updates are not available for this table right now. The rows below are current as of this page load; reload to try again."
+        )}
+      </span>
     </div>
 
     <div class="bg-base-100 rounded-box shadow border border-base-200">
       <div class="p-4 border-b border-base-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div class="flex items-center gap-4">
-          <span class="text-sm text-base-content/70">
-            {@preview.row_count} {Gettext.ngettext(
-              PhoenixKitWeb.Gettext,
-              "row total",
-              "rows total",
-              @preview.row_count
-            )}
+          <span
+            id="db-row-total"
+            class="text-sm text-base-content/70"
+            data-approximate={to_string(@preview.row_count_approx)}
+          >
+            <%= if @preview.row_count_approx do %>
+              {ngettext(
+                "about %{count} row total (estimate)",
+                "about %{count} rows total (estimate)",
+                @preview.row_count
+              )}
+            <% else %>
+              {@preview.row_count} {ngettext("row total", "rows total", @preview.row_count)}
+            <% end %>
           </span>
-          <.form for={%{}} phx-change="set_per_page" class="flex items-center gap-2">
-            <span class="text-sm text-base-content/70">{Gettext.gettext(PhoenixKitWeb.Gettext, "Show")}</span>
+          <.form for={%{}} id="db-per-page" phx-change="set_per_page" class="flex items-center gap-2">
+            <span class="text-sm text-base-content/70">{gettext("Show")}</span>
             <label class="select select-sm w-20">
               <select name="per_page">
                 <%= for option <- [10, 20, 50, 100, 200] do %>
@@ -46,7 +62,7 @@
                 <% end %>
               </select>
             </label>
-            <span class="text-sm text-base-content/70">{Gettext.gettext(PhoenixKitWeb.Gettext, "per page")}</span>
+            <span class="text-sm text-base-content/70">{gettext("per page")}</span>
           </.form>
         </div>
         <div class="flex items-center gap-2">
@@ -56,7 +72,7 @@
               phx-click="change_page"
               phx-value-page="1"
               disabled={@preview.page <= 1}
-              title={Gettext.gettext(PhoenixKitWeb.Gettext, "First page")}
+              title={gettext("First page")}
             >
               <.icon name="hero-chevron-double-left" class="w-4 h-4" />
             </button>
@@ -65,12 +81,12 @@
               phx-click="change_page"
               phx-value-page={@preview.page - 1}
               disabled={@preview.page <= 1}
-              title={Gettext.gettext(PhoenixKitWeb.Gettext, "Previous page")}
+              title={gettext("Previous page")}
             >
               <.icon name="hero-chevron-left" class="w-4 h-4" />
             </button>
             <span class="join-item btn btn-sm btn-disabled !text-base-content">
-              {Gettext.gettext(PhoenixKitWeb.Gettext, "Page %{page} of %{total}",
+              {gettext("Page %{page} of %{total}",
                 page: @preview.page,
                 total: @preview.total_pages
               )}
@@ -80,7 +96,7 @@
               phx-click="change_page"
               phx-value-page={@preview.page + 1}
               disabled={@preview.page >= @preview.total_pages}
-              title={Gettext.gettext(PhoenixKitWeb.Gettext, "Next page")}
+              title={gettext("Next page")}
             >
               <.icon name="hero-chevron-right" class="w-4 h-4" />
             </button>
@@ -89,7 +105,7 @@
               phx-click="change_page"
               phx-value-page={@preview.total_pages}
               disabled={@preview.page >= @preview.total_pages}
-              title={Gettext.gettext(PhoenixKitWeb.Gettext, "Last page")}
+              title={gettext("Last page")}
             >
               <.icon name="hero-chevron-double-right" class="w-4 h-4" />
             </button>
@@ -125,15 +141,23 @@
                       colspan={length(@preview.columns)}
                       class="text-center !py-8 text-base-content/70"
                     >
-                      {Gettext.gettext(PhoenixKitWeb.Gettext, "No rows found.")}
+                      {gettext("No rows found.")}
                     </td>
                   </tr>
                 <% else %>
-                  <%= for row <- @preview.rows do %>
-                    <tr class={row_highlighted?(row, @highlighted_rows) && "animate-highlight"}>
+                  <%= for {row, index} <- Enum.with_index(@preview.rows) do %>
+                    <tr class={
+                      row_highlighted?(row, index, @preview.primary_key, @highlighted_rows) &&
+                        "animate-highlight"
+                    }>
                       <%= for column <- @preview.columns do %>
+                        <% value = Map.get(row, column.name) %>
                         <td class="align-middle max-w-xs truncate">
-                          {format_cell(Map.get(row, column.name))}
+                          <%= if is_nil(value) do %>
+                            <span class="text-base-content/40 italic">{gettext("null")}</span>
+                          <% else %>
+                            {format_cell(value)}
+                          <% end %>
                         </td>
                       <% end %>
                     </tr>
@@ -167,7 +191,7 @@
                 class="absolute right-5 w-12 pointer-events-none opacity-0 transition-opacity duration-150"
                 style={"top: #{zone_offset}%; bottom: #{zone_offset}%;"}
               >
-                <%= for page <- 1..@preview.total_pages do %>
+                <%= for page <- page_markers(@preview.total_pages) do %>
                   <div
                     class="page-marker absolute right-0 font-medium text-base-content bg-base-100 px-1 rounded shadow-sm border border-base-300 -translate-y-1/2 origin-right transition-transform duration-75"
                     data-page={page}

@@ -9,8 +9,11 @@ defmodule PhoenixKitDb.Listener do
   react in real time.
 
   Started via the `c:PhoenixKit.Module.children/0` callback on
-  `PhoenixKitDb`, which the host's `PhoenixKit.Supervisor` consumes
-  when the module is enabled.
+  `PhoenixKitDb`. The host's `PhoenixKit.Supervisor` starts every module's
+  children at boot whether or not the module is enabled, so this process and
+  its one idle connection exist on every host that has the package installed.
+  A disabled module has no triggers (`PhoenixKitDb.disable_system/0` removes
+  them), so nothing is notified and the connection stays silent.
   """
 
   use GenServer
@@ -107,7 +110,8 @@ defmodule PhoenixKitDb.Listener do
   def handle_info({:notification, _conn, _ref, @channel, payload}, state) do
     case parse_payload(payload) do
       {schema, table, operation, row_id} ->
-        Logger.info("PhoenixKitDb: #{schema}.#{table} - #{operation} (id: #{row_id || "n/a"})")
+        # One line per changed row: a bulk update would bury the log at :info.
+        Logger.debug("PhoenixKitDb: #{schema}.#{table} - #{operation} (id: #{row_id || "n/a"})")
 
         message = {:table_changed, schema, table, operation, row_id}
 
@@ -127,13 +131,35 @@ defmodule PhoenixKitDb.Listener do
     {:noreply, state}
   end
 
-  @impl true
-  def terminate(_reason, %{conn: conn}) when is_pid(conn) do
-    Postgrex.Notifications.unlisten(conn, @channel)
-    :ok
-  end
+  @doc """
+  The `Postgrex.Notifications` options derived from the host repo's config.
 
-  def terminate(_reason, _state), do: :ok
+  Everything that decides WHERE and HOW the repo connects passes through,
+  because this connection must reach the same server the same way: local
+  sockets, SSL, `:socket_options` (an IPv6-only host connects only with
+  `[:inet6]`) and `:parameters` (a `search_path`, an `application_name`).
+  Pool and sandbox options stay behind.
+  """
+  @spec connection_config(keyword()) :: keyword()
+  def connection_config(repo_config) do
+    repo_config
+    |> Keyword.take([
+      :hostname,
+      :port,
+      :database,
+      :username,
+      :password,
+      :socket,
+      :socket_dir,
+      :ssl,
+      :ssl_opts,
+      :socket_options,
+      :parameters
+    ])
+    |> Keyword.put_new(:hostname, "localhost")
+    |> Keyword.put_new(:port, 5432)
+    |> Keyword.put(:auto_reconnect, true)
+  end
 
   # ── Private ──────────────────────────────────────────────────────
 
@@ -156,32 +182,8 @@ defmodule PhoenixKitDb.Listener do
 
   defp get_connection_config do
     case PhoenixKit.RepoHelper.repo() do
-      nil ->
-        {:error, :no_repo}
-
-      repo ->
-        config = repo.config()
-
-        # Postgrex-compatible config from the host repo's settings.
-        # Local sockets and SSL options pass through.
-        postgrex_config =
-          config
-          |> Keyword.take([
-            :hostname,
-            :port,
-            :database,
-            :username,
-            :password,
-            :socket,
-            :socket_dir,
-            :ssl,
-            :ssl_opts
-          ])
-          |> Keyword.put_new(:hostname, "localhost")
-          |> Keyword.put_new(:port, 5432)
-          |> Keyword.put(:auto_reconnect, true)
-
-        {:ok, postgrex_config}
+      nil -> {:error, :no_repo}
+      repo -> {:ok, connection_config(repo.config())}
     end
   rescue
     e ->

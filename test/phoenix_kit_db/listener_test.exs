@@ -119,12 +119,78 @@ defmodule PhoenixKitDb.ListenerTest do
   end
 
   describe "unrelated messages" do
-    test "non-notification messages are swallowed by the catch-all", %{pid: pid} do
+    test "the Listener keeps broadcasting after messages it does not know", %{pid: pid} do
+      PubSub.subscribe(PubSub.topic_all())
+
       send(pid, :some_unrelated_message)
       send(pid, {:tuple, :that, :doesnt, :match})
 
-      # Listener should still be alive after the catch-all runs.
-      assert Process.alive?(pid)
+      send(
+        pid,
+        {:notification, self(), make_ref(), "phoenix_kit_db_changes", "public.users:INSERT:7"}
+      )
+
+      assert_receive {:table_changed, "public", "users", "INSERT", "7"}, 500
+    end
+  end
+
+  describe "logging" do
+    test "a notification is not logged at :info or above", %{pid: pid} do
+      previous = Logger.level()
+      Logger.configure(level: :debug)
+      on_exit(fn -> Logger.configure(level: previous) end)
+
+      payload = "public.users:INSERT:7"
+      message = {:notification, self(), make_ref(), "phoenix_kit_db_changes", payload}
+
+      deliver = fn ->
+        send(pid, message)
+        # A call is answered after the notification before it is handled.
+        :sys.get_state(pid)
+      end
+
+      assert ExUnit.CaptureLog.capture_log([level: :debug], deliver) =~
+               "public.users - INSERT"
+
+      refute ExUnit.CaptureLog.capture_log([level: :info], deliver) =~ "public.users - INSERT"
+    end
+  end
+
+  describe "connection_config/1" do
+    test "passes through everything that decides where and how the repo connects" do
+      repo_config = [
+        hostname: "db.internal",
+        port: 6543,
+        database: "app",
+        username: "app",
+        password: "pw",
+        ssl: true,
+        ssl_opts: [verify: :verify_none],
+        socket_options: [:inet6],
+        parameters: [application_name: "app", search_path: "tenant"],
+        pool: Ecto.Adapters.SQL.Sandbox,
+        pool_size: 10
+      ]
+
+      config = Listener.connection_config(repo_config)
+
+      assert config[:socket_options] == [:inet6]
+      assert config[:parameters] == [application_name: "app", search_path: "tenant"]
+      assert config[:hostname] == "db.internal"
+      assert config[:port] == 6543
+      assert config[:ssl] == true
+      assert config[:ssl_opts] == [verify: :verify_none]
+      assert config[:auto_reconnect] == true
+      refute Keyword.has_key?(config, :pool)
+      refute Keyword.has_key?(config, :pool_size)
+    end
+
+    test "fills in the host and port a socket-less config leaves out" do
+      config = Listener.connection_config(database: "app")
+
+      assert config[:hostname] == "localhost"
+      assert config[:port] == 5432
+      refute Keyword.has_key?(config, :socket_options)
     end
   end
 

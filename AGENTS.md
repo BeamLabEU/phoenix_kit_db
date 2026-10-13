@@ -9,27 +9,30 @@ activity feed. It implements the `PhoenixKit.Module` behaviour for
 auto-discovery and registers three admin pages:
 
 - **Index** (`/admin/db`): list of tables with row counts, sizes, search and
-  pagination. Live-refreshes on any mutation across any table.
+  pagination. Live-refreshes on a mutation of any watched table.
 - **Show** (`/admin/db/:schema/:table`): paginated row preview for one table
   with debounced live refresh on mutations to that table; newly-changed rows
-  highlight for 3 seconds.
-- **Activity** (`/admin/db/activity`): global INSERT/UPDATE/DELETE feed with
-  filter by table and operation, pause/clear controls, per-key diff
-  highlighting.
+  highlight for 3 seconds. Values in secret-named columns are masked.
+- **Activity** (`/admin/db/activity`): INSERT/UPDATE/DELETE feed for the
+  watched tables with filter by table and operation, pause/clear controls,
+  per-key diff highlighting.
 
 Live updates ride on Postgres `LISTEN/NOTIFY`. The module installs one
 notification function (`phoenix_kit_notify_table_change()`) plus a per-table
 trigger (`phoenix_kit_db_change_<schema>_<table>`) lazily, the first time a
-Show page is viewed for that table. A dedicated `Postgrex.Notifications`
-connection (the `PhoenixKitDb.Listener` GenServer) parses notifications on the
-`phoenix_kit_db_changes` channel and rebroadcasts them via
-`PhoenixKitDb.PubSub`.
+Show page is viewed for that table; a table nobody has opened is not watched.
+A dedicated `Postgrex.Notifications` connection (the `PhoenixKitDb.Listener`
+GenServer) parses notifications on the `phoenix_kit_db_changes` channel and
+rebroadcasts them via `PhoenixKitDb.PubSub`.
 
 - **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex); `phoenix_live_view` `~> 1.1`;
+  `gettext` `~> 1.0` (the module's own backend);
   `postgrex` `~> 0.17` (`Postgrex.Notifications` for the Listener); test-only
   `lazy_html`. No sibling `phoenix_kit_*` deps. The module toggles log through
   core's `PhoenixKit.Activity.log/3`, so the floor is the core release that
   added it.
+- **What `db` access exposes:** every row of every table, read-only. Grant it
+  as you would grant `psql` access; masking covers secret-NAMED columns only.
 - **Consumed by:** nothing yet. Core mirrors this module's `permission_metadata/0`
   (label `"DB"`, icon `hero-server-stack`, description) in
   `PhoenixKit.Users.Permissions` fallbacks so the `db` key renders correctly
@@ -44,7 +47,8 @@ connection (the `PhoenixKitDb.Listener` GenServer) parses notifications on the
 ## What this module does NOT do
 
 - **No Ecto schemas.** The module reads `pg_stat_user_tables`,
-  `information_schema.columns` and `information_schema.triggers` directly via
+  `information_schema.columns` and the `pg_attribute` / `pg_index` /
+  `pg_trigger` catalogs directly via
   raw SQL through `PhoenixKit.RepoHelper.query/2`. There is no domain model.
 - **No Errors module.** `fetch_row/3` returns `{:error, atom}` shapes
   (`:not_found`, `:invalid_id`, `:invalid_identifier`), but those do not
@@ -53,12 +57,13 @@ connection (the `PhoenixKitDb.Listener` GenServer) parses notifications on the
   `phoenix_kit_locations`' `lib/phoenix_kit_locations/errors.ex`.
   `fetch_row/3` must never raise. The Activity feed calls it from
   `handle_info/2` on a LISTEN/NOTIFY payload naming an arbitrary table, so an
-  escaping exception kills the LiveView. Three things could raise and now
-  return error tuples instead: a parameter that cannot be the primary key's
+  escaping exception kills the LiveView. Three things would raise and return
+  error tuples instead: a parameter that cannot be the primary key's
   type (`bind_pk_param/2` rejects it before the query, and `run_pk_query/2`
   still rescues `DBConnection.EncodeError` as a backstop), and a table with no
-  primary key or a composite one (`pk_column_info/1` replaces core's
-  `RepoHelper.get_pk_column/1`, which raises `ArgumentError` on both).
+  primary key or a composite one (`relation_attributes/1` +
+  `single_primary_key/1` stand in for core's `RepoHelper.get_pk_column/1`,
+  which raises `ArgumentError` on both).
 - **No write surface to user data.** The module is read-only against
   arbitrary tables. The only mutating operations it owns are the trigger DDL
   (`CREATE OR REPLACE FUNCTION`, `CREATE TRIGGER`, `DROP TRIGGER`) and the
@@ -68,10 +73,25 @@ connection (the `PhoenixKitDb.Listener` GenServer) parses notifications on the
   is over-engineering for one call site; copy
   `phoenix_kit_staff/lib/phoenix_kit_staff/activity.ex` if more call sites
   appear.
-- **No migrations, no tables, no `route_module/0`, no own gettext backend.**
+- **No migrations, no tables, no `route_module/0`.**
   Trigger install is runtime DDL, not a migration chain.
-- **Triggers are never auto-removed.** `remove_trigger/2` and
-  `remove_all_triggers/0` exist for ops; nothing in the UI calls them.
+- **No "reveal" control for a masked value.** A masked cell never reaches the
+  LiveView, so there is nothing to un-hide; reading a secret is a `psql` job.
+- **No masking by content.** Only a name marks a value as secret: the column's,
+  a JSON key's, or, for a row of a key/value table, the row's own `key` /
+  `name`. A secret stored under a neutral name in any other shape is shown.
+- **Does not open tables whose schema or table name is outside
+  `[a-zA-Z0-9_]`.** They are left out of every list and counted on the Index
+  page. Supporting them needs identifier quoting end to end, including the
+  NOTIFY payload, which is split on `.` and `:`.
+- **No per-table opt-out and no trigger removal in the UI.** A trigger stays
+  until `disable_system/0` removes them all; `remove_trigger/2` and
+  `remove_all_triggers/0` exist for ops.
+- **The Listener does not follow the enabled flag.** Core starts every
+  module's `children/0` at boot regardless of the setting, so the process and
+  its one idle connection exist while the module is disabled. Gating it would
+  need a reliable read of the setting at supervisor start and a signal on
+  every node when it changes.
 
 ## Commands
 
@@ -121,14 +141,54 @@ Repo-local aliases and details:
   colocated `*.html.heex` templates. Templates do NOT wrap in
   `PhoenixKitWeb.Components.LayoutWrapper.app_layout`; `live_session
   :phoenix_kit_admin` applies the layout.
-- **gettext:** core's `PhoenixKitWeb.Gettext` via the runtime form
-  `Gettext.gettext(PhoenixKitWeb.Gettext, "...")`; plurals via
-  `Gettext.ngettext/4`. Every user-facing string in
+- **gettext:** the module's own backend, `PhoenixKitDb.Gettext`, with
+  catalogues in `priv/gettext/{en,et,ru}`. Every LiveView adds
+  `use Gettext, backend: PhoenixKitDb.Gettext` AFTER
+  `use PhoenixKitWeb, :live_view` (the later `use` shadows core's backend) and
+  calls the macro form, `gettext("...")` / `ngettext("...", "...", n)`. The
+  runtime form `Gettext.gettext(Backend, "...")` is invisible to
+  `mix gettext.extract`; do not use it. Every user-facing string in
   `lib/phoenix_kit_db/web/**/*.{ex,heex}` is wrapped. `:page_title` assigns
   are wrapped except where they are programmatic identifiers
-  (`schema.table`). Translation catalogs live in core, not here, and the
-  runtime form is invisible to `mix gettext.extract`, so a new msgid must be
-  added to core's `priv/gettext` by hand.
+  (`schema.table`). Tab and permission labels are plain literals translated by
+  core through each declaration's `gettext_backend:` / `gettext_domain:`, so
+  each one needs its `dgettext_noop/2` anchor in `translatable_labels/0`.
+  After a string change: `mix gettext.extract --merge`, fill every new
+  `msgstr` in `et` and `ru` (all plural forms), clear every `#, fuzzy`.
+- **Secrets are masked by column name, right after the query.**
+  `PhoenixKitDb.Cells.sanitize_row/2` runs inside `table_preview/3` and
+  `fetch_row/3`, so a value in a secret-named column (`Cells.secret_column?/1`)
+  is the placeholder before it reaches an assign, the HTML or a diff. Any new
+  code path that reads rows must go through it. The same name rule masks keys
+  inside JSON values and, when a row's `key` / `name` reads as a secret, that
+  row's `value*` columns.
+- **Row search reads nothing masking can hide**, or a hit on a masked row
+  confirms a guess at the hidden value. `Cells.searchable_column?/2` is the
+  one rule, built on the same name rule and key/value column names as
+  `sanitize_row/2`: no secret-named column, and no `value*` column on a table
+  that has a `key` or `name` column (which rows are masked depends on each
+  row's key, so the column is skipped for all of them). JSON columns are not
+  searched at all (`@textual_types`). A new masking rule in `Cells` needs its
+  counterpart there.
+- **One formatter, and it is total.** Both pages print a value through
+  `PhoenixKitDb.Cells.format/2`, which never raises: an unknown term renders as
+  its `inspect/1` form. Structs are matched before the plain-map clause
+  (`Jason.encode!/1` raises on `%Postgrex.INET{}` and friends). Never format a
+  row value any other way in a template or a `handle_info/2`.
+- **A page loads its data in `handle_params/3` only.** `mount/3` and
+  `handle_params/3` both run on the dead render and on the connected one;
+  loading in both doubles every query. The LiveView tests count the queries.
+- **A row total above 100,000 (planner estimate) is the estimate**, shown as
+  approximate, and no `COUNT(*)` runs. An estimated total never feeds the
+  "N rows added/removed" flash.
+- **A `<select>` that filters lives inside a `<.form phx-change=...>`.** The
+  LiveView client sends no change event for an input outside a form. Tests
+  drive it with `form/3 |> render_change`, never
+  `render_change(view, "event", ...)`, which bypasses the form.
+- **The Activity feed buffers notifications** in `socket.private` and builds
+  entries on a 250 ms timer, at most 100 per flush; the overflow is dropped
+  oldest-first and shown as "N events skipped". Per-message work stays
+  constant so a bulk update cannot bury a click on Pause.
 - **JS hooks:** the rule is a prebuilt bundle declared by `js_sources/0` under a
   namespaced global, never registered from an inline `<script>` (morphdom does
   not execute inserted script tags, so an inline hook vanishes on LiveView
@@ -156,14 +216,36 @@ Repo-local aliases and details:
   Listener is not running.
 - **Identifier validation:** `safe_quote_ident/1` and `safe_qualified_table/2`
   in `phoenix_kit_db.ex` are the only API for splicing `schema`/`table`/
-  `column` names into SQL. They reject anything outside `[a-zA-Z0-9_]` with
+  `column`/trigger names into SQL. They reject anything outside
+  `[a-zA-Z0-9_]` (anchored `\A…\z`, so a trailing newline fails) with
   `{:error, :invalid_identifier}` and never raise. The internal
-  `quote_ident!/1` runs only on input already validated upstream. Trigger names
-  replace disallowed characters with `_`.
+  `quote_ident!/1` runs only on input already validated upstream.
+  `@supported_tables_sql` is the same rule as a Postgres predicate for the
+  table lists; the two must accept exactly the same names.
 - **Trigger install is idempotent** and race-safe: a concurrent creator's
   `duplicate_object` reply is folded into `:ok`, because the win condition is
   "the trigger exists".
-- **ShowLive subscribes AFTER `table_preview/3`** so a bogus identifier never
+- **A trigger is recognised by prefix + function, never by its full name.**
+  Postgres cuts an identifier to 63 bytes, so the stored name of a long table's
+  trigger is not the generated one. `has_trigger?/2`, `list_triggered_tables/0`
+  and `remove_trigger/2` read `pg_trigger` for triggers that start with
+  `phoenix_kit_db_change_` AND call the notify function. `trigger_name/2` is
+  the only place a name is built; past 63 bytes it is cut and suffixed with a
+  hash of `schema.table`.
+- **Trigger DDL runs through `run_ddl/1`**, in a transaction with
+  `SET LOCAL lock_timeout` (2 s; `config :phoenix_kit_db, :ddl_lock_timeout_ms`).
+  `CREATE`/`DROP TRIGGER` conflict with every writer, and a waiting lock
+  request stalls all writers behind it. A timeout is `{:error, :lock_timeout}`:
+  the Show page still loads and says live updates are unavailable.
+- **`disable_system/0` removes every trigger**, best effort: a failure is
+  logged and never blocks the disable, and nothing retries on its own. A
+  trigger whose drop timed out keeps firing `pg_notify` until someone calls
+  `PhoenixKitDb.remove_all_triggers()` (or `disable_system/0`) again. Both
+  read the leftovers from `pg_trigger`, so no state has to survive for the
+  retry to work; `remove_all_triggers/0` returns `{:error, tables}` while any
+  remain.
+- **ShowLive subscribes AFTER `table_preview/3`**, once, on the connected
+  render, so a bogus identifier never
   leaks a subscription; a broadcast in that gap is dropped and the next
   `:table_changed` catches the LV up. ActivityLive calls
   `ensure_trigger("public", "phoenix_kit_settings")` on mount so the
@@ -209,6 +291,12 @@ Repo-local aliases and details:
 - `Settings.update_*` writes a process-wide ETS cache, so tests that call
   `enable_system/0` / `disable_system/0` run `async: false` and reset the
   toggle afterwards, or later tests see the wrong state.
+- A trigger installed inside the SQL sandbox holds its table lock until the
+  test ends, and under a shared sandbox owner `Sandbox.unboxed_run/2` silently
+  runs on the sandboxed connection. A test that needs a committed table, a real
+  NOTIFY or a contended lock does its unboxed work BEFORE starting the owner
+  (see `test/phoenix_kit_db/committed_trigger_test.exs`) and drops what it
+  created in `on_exit`.
 - The Listener is not in the test Endpoint's supervision tree. A test that
   needs the `handle_info({:notification, ...})` path does
   `start_supervised!(PhoenixKitDb.Listener)` and drives it with `send/2`; the
@@ -218,6 +306,8 @@ Repo-local aliases and details:
 
 ```
 lib/phoenix_kit_db.ex                  PhoenixKit.Module impl + query helpers + trigger DDL
+lib/phoenix_kit_db/cells.ex            secret masking, uuid decoding, the one value formatter
+lib/phoenix_kit_db/gettext.ex          the module's Gettext backend
 lib/phoenix_kit_db/listener.ex         Postgrex.Notifications GenServer (auto-reconnect)
 lib/phoenix_kit_db/paths.ex            index/0, activity/0, show/2
 lib/phoenix_kit_db/pub_sub.ex          topic constants + subscribe/broadcast wrappers
@@ -225,13 +315,17 @@ lib/phoenix_kit_db/web/index_live.*    table list + stats
 lib/phoenix_kit_db/web/show_live.*     row preview + fake-scrollbar container
 lib/phoenix_kit_db/web/activity_live.* live feed with per-key diff highlighting
 priv/static/assets/phoenix_kit_db.js   PhoenixKitDbHooks bundle (fake-scrollbar hook)
+priv/gettext/                          default.pot + en, et, ru catalogues
 ```
 
 Public API in `PhoenixKitDb`: `database_stats/0`, `list_tables/1`,
-`table_preview/3`, `fetch_row/3`, `ensure_trigger/2`, `remove_trigger/2`,
-`has_trigger?/2`, `list_triggered_tables/0`, `remove_all_triggers/0`,
-`notify_channel/0`. `children/0` returns `[PhoenixKitDb.Listener]`, which the
-host's `PhoenixKit.Supervisor` starts when the module is enabled.
+`list_table_names/0`, `table_preview/3`, `fetch_row/3`, `ensure_trigger/2`,
+`remove_trigger/2`, `has_trigger?/2`, `list_triggered_tables/0`,
+`remove_all_triggers/0`, `translatable_labels/0`, `notify_channel/0`.
+`children/0` returns `[PhoenixKitDb.Listener]`, which the host's
+`PhoenixKit.Supervisor` starts at boot whether or not the module is enabled.
+`Listener.connection_config/1` derives the notification connection from the
+host repo's config and passes through `:socket_options` and `:parameters`.
 `css_sources/0` returns `[:phoenix_kit_db]`; `js_sources/0` returns the one
 bundle, `priv/static/assets/phoenix_kit_db.js` under the global
 `PhoenixKitDbHooks`. `priv` is in the Hex package's `files:` list, so the
@@ -243,7 +337,7 @@ bundle reaches consumers.
 |---|---|---|
 | Notification function | `phoenix_kit_notify_table_change()` | plpgsql; picks the row PK as `uuid`, then `id`, then empty; `pg_notify`s on the channel |
 | Channel | `phoenix_kit_db_changes` | `notify_channel/0` |
-| Per-table trigger | `phoenix_kit_db_change_<schema>_<table>` | AFTER INSERT OR UPDATE OR DELETE, FOR EACH ROW; installed lazily on first Show view |
+| Per-table trigger | `phoenix_kit_db_change_<schema>_<table>` | AFTER INSERT OR UPDATE OR DELETE, FOR EACH ROW; installed lazily on first Show view; a name past 63 bytes is cut and ends in `_<8 hex>`; removed by `disable_system/0` |
 | Payload | `schema.table:OPERATION:row_id` | `row_id` is `""` when the table has neither `uuid` nor `id` |
 
 ### PubSub (via `PhoenixKit.PubSub.Manager`)
@@ -264,11 +358,18 @@ The Listener broadcasts every parsed notification on both topics.
 - Permission key `"db"` (`permission_metadata/0`: label "DB", icon
   `hero-server-stack`). Every tab uses it. The Owner role inherits it; custom
   roles get it from the roles matrix.
+- Config `:ddl_lock_timeout_ms` (app env, default 2000): how long trigger DDL
+  waits for its table lock.
 - Data model: none. Stats come from `pg_stat_user_tables`; columns from
-  `information_schema.columns`; trigger presence from
-  `information_schema.triggers`. Row preview orders by `uuid`, then `id`, then
-  `ctid`; row search casts textual columns (`text`, `character varying`,
-  `citext`, `json`, `jsonb`, `uuid`, `inet`, ...) to TEXT and `ILIKE`s them.
+  `information_schema.columns`; column types and the primary key from
+  `pg_attribute` / `pg_index`; trigger presence from `pg_trigger`. Row preview
+  orders by `uuid`, then `id`, then `ctid`; row search casts textual columns
+  (`text`, `character varying`, `character`, `citext`, `uuid`, `inet`) to TEXT
+  and `ILIKE`s them, skipping every column `Cells.searchable_column?/2`
+  rejects.
+- Preview shape: `table_preview/3` also returns `:primary_key` (the columns
+  that tell rows apart, `[]` when there are none or the key is masked) and
+  `:row_count_approx`. Rows highlight by primary key, by position without one.
 - Page sizes: tables 5..100 (default 20); rows 10..200 (default 50 in
   `table_preview/3`, 20 in ShowLive's allowed list `[10, 20, 50, 100, 200]`).
 
@@ -276,8 +377,8 @@ The Listener broadcasts every parsed notification on both topics.
 
 None. No tables of its own; `migration_module/0` is unset. The module's only
 DDL is the runtime trigger install through `RepoHelper.query/2` (see the
-Postgres objects table), which is idempotent and reversible with
-`remove_all_triggers/0`. There are no schemas, so the UUIDv7-PK and
+Postgres objects table), which is idempotent, runs under a lock timeout and
+is reversed by `remove_all_triggers/0` (which `disable_system/0` calls). There are no schemas, so the UUIDv7-PK and
 `use PhoenixKit.SchemaPrefix` rules have no site here; they apply the moment a
 table-backed schema is added.
 
@@ -304,17 +405,23 @@ without which every `RepoHelper` call crashes.
 
 Three levels:
 
-- **Unit** (`test/phoenix_kit_db_test.exs`, `test/core_pin_conformance_test.exs`):
-  behaviour compliance, Paths, the input-validation branches of `fetch_row/3`
-  / `ensure_trigger/2` / `remove_trigger/2` (they short-circuit before any
-  `RepoHelper` call). Run without Postgres.
+- **Unit** (`test/phoenix_kit_db_test.exs`, `test/core_pin_conformance_test.exs`,
+  `test/phoenix_kit_db/cells_test.exs`):
+  behaviour compliance, Paths, i18n wiring, the masking name table, the
+  formatter's shape x type product, the input-validation branches of
+  `fetch_row/3` / `ensure_trigger/2` / `remove_trigger/2` (they short-circuit
+  before any `RepoHelper` call). Run without Postgres.
 - **Listener** (`test/phoenix_kit_db/listener_test.exs`): `start_supervised!`
   the Listener and drive `handle_info({:notification, ...})` via `send/2`;
   no Postgres needed.
-- **Integration**: `test/phoenix_kit_db/activity_logging_test.exs` (`DataCase`)
-  and the LiveView smoke tests in `test/phoenix_kit_db/web/*_live_test.exs`
-  (`LiveCase`, driven through `Phoenix.LiveViewTest.live/2` against the test
-  Endpoint and Router). Both cases auto-tag `:integration`.
+- **Integration**: `activity_logging_test.exs`, `fetch_row_test.exs`,
+  `tables_test.exs` and `triggers_test.exs` (`DataCase`, real tables created
+  inside the sandbox), the LiveView tests in
+  `test/phoenix_kit_db/web/*_live_test.exs` (`LiveCase`, driven through
+  `Phoenix.LiveViewTest.live/2` against the test Endpoint and Router), and
+  `committed_trigger_test.exs`, which commits one table outside the sandbox to
+  exercise a real NOTIFY round trip and trigger DDL behind a held lock. All
+  are tagged `:integration`.
 
 Support modules (`test/support/`):
 
@@ -332,7 +439,13 @@ Support modules (`test/support/`):
   setup.
 - `live_case.ex`: `PhoenixKitDb.LiveCase` with `fake_scope/1` (a real
   `%PhoenixKit.Users.Auth.Scope{}`; defaults `roles: [:owner]`,
-  `permissions: ["db"]`) and `put_test_scope/2`.
+  `permissions: ["db"]`), `put_test_scope/2`, `texts/2` (rendered text by CSS
+  selector) and `assigns/1`.
+- `fixtures.ex`: `PhoenixKitDb.Fixtures`, throwaway tables of a known shape
+  (`create_secrets_table/0`, `create_types_table/0`) and `unboxed/1`.
+- `query_counter.ex`: `PhoenixKitDb.QueryCounter.capture/1`, the SQL a block
+  actually ran, from the repo's telemetry event. Use it for any "loads once" or
+  "does not query" claim.
 - `activity_log_assertions.ex`: `assert_activity_logged/2` and
   `refute_activity_logged/2`, querying `phoenix_kit_activities` directly.
 
@@ -346,8 +459,10 @@ Known test noise (all cosmetic):
   tests exercise the LV's `handle_info({:table_changed, ...})` paths, not real
   notifications).
 - `[error] Failed to query setting db_enabled: %DBConnection.OwnershipError{...}`:
-  the `enabled?/0` rescue firing in the unit phase before any sandbox owner
-  exists; the `is_boolean(enabled?())` assertion still passes.
+  the `enabled?/0` rescue firing in the unit phase, where no sandbox owner
+  exists; that test asserts the `false` it returns.
+- `[warning] Cache settings unavailable: ... PhoenixKit.Cache.Registry`: core's
+  settings cache is not started in this suite, so settings read the database.
 
 ## Feature notes
 
