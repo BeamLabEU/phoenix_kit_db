@@ -4,11 +4,9 @@ defmodule PhoenixKitDb.PubSub do
   backed by `PhoenixKit.PubSub.Manager` (the shared in-process PubSub
   server).
 
-  The Postgres `LISTEN/NOTIFY` channel itself (`phoenix_kit_db_changes`,
-  `PhoenixKitDb.notify_channel/0`) is internal to `PhoenixKitDb.Listener` —
-  these helpers wrap the
-  per-LiveView fan-out that the Listener performs after parsing each
-  notification.
+  The Postgres `LISTEN/NOTIFY` channel itself (`phoenix_kit_db_changes`) is
+  internal to `PhoenixKitDb.Listener` — these helpers wrap the per-LiveView
+  fan-out that the Listener performs after parsing each notification.
 
   ## Topics
 
