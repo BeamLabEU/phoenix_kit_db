@@ -39,38 +39,29 @@ defmodule PhoenixKitDbTest do
       assert PhoenixKitDb.module_name() == "DB"
     end
 
-    test "enabled?/0 returns a boolean" do
-      # In test env without DB this returns false (the rescue fallback).
-      assert is_boolean(PhoenixKitDb.enabled?())
-    end
-
-    test "enable_system/0 is exported" do
-      assert function_exported?(PhoenixKitDb, :enable_system, 0)
-    end
-
-    test "disable_system/0 is exported" do
-      assert function_exported?(PhoenixKitDb, :disable_system, 0)
+    test "enabled?/0 answers false, without raising, when the setting cannot be read" do
+      # No sandbox owner here, so the settings query itself fails.
+      assert PhoenixKitDb.enabled?() == false
     end
   end
 
   describe "permission_metadata/0" do
-    test "returns a map with required fields" do
-      meta = PhoenixKitDb.permission_metadata()
-      assert %{key: key, label: label, icon: icon, description: desc} = meta
-      assert is_binary(key)
-      assert is_binary(label)
-      assert is_binary(icon)
-      assert is_binary(desc)
+    # Core mirrors these three values as its fallback for the `db` key, so a
+    # change here needs the same change there.
+    test "declares the key, label, icon and description core mirrors" do
+      assert PhoenixKitDb.permission_metadata() == %{
+               key: "db",
+               label: "DB",
+               icon: "hero-server-stack",
+               description: "Database explorer and schema inspection",
+               gettext_backend: PhoenixKitDb.Gettext,
+               gettext_domain: "default"
+             }
     end
 
     test "key matches module_key" do
       meta = PhoenixKitDb.permission_metadata()
       assert meta.key == PhoenixKitDb.module_key()
-    end
-
-    test "icon uses hero- prefix" do
-      meta = PhoenixKitDb.permission_metadata()
-      assert String.starts_with?(meta.icon, "hero-")
     end
   end
 
@@ -84,7 +75,7 @@ defmodule PhoenixKitDbTest do
       [main | _] = PhoenixKitDb.admin_tabs()
       assert main.id == :admin_db
       assert main.label == "DB"
-      assert is_binary(main.path)
+      assert main.path == "db"
       assert main.level == :admin
       assert main.permission == PhoenixKitDb.module_key()
       assert main.group == :admin_modules
@@ -138,9 +129,7 @@ defmodule PhoenixKitDbTest do
 
   describe "version/0" do
     test "returns a version string" do
-      version = PhoenixKitDb.version()
-      assert is_binary(version)
-      assert version == Mix.Project.config()[:version]
+      assert PhoenixKitDb.version() == Mix.Project.config()[:version]
     end
   end
 
@@ -212,9 +201,7 @@ defmodule PhoenixKitDbTest do
     alias PhoenixKitDb.Paths
 
     test "index/0 returns a path string ending in /admin/db" do
-      path = Paths.index()
-      assert is_binary(path)
-      assert String.ends_with?(path, "/admin/db")
+      assert String.ends_with?(Paths.index(), "/admin/db")
     end
 
     test "activity/0 returns the activity subpath" do
@@ -231,6 +218,92 @@ defmodule PhoenixKitDbTest do
       assert String.starts_with?(Paths.activity(), Paths.index())
       assert String.starts_with?(Paths.show("public", "x"), Paths.index())
     end
+  end
+
+  describe "i18n wiring" do
+    alias PhoenixKit.Dashboard.Tab
+
+    test "every tab carries the module's own gettext backend" do
+      for tab <- PhoenixKitDb.admin_tabs() do
+        assert tab.gettext_backend == PhoenixKitDb.Gettext
+        assert tab.gettext_domain == "default"
+      end
+    end
+
+    test "every tab and permission label is pinned as a msgid" do
+      labels = Enum.map(PhoenixKitDb.admin_tabs(), & &1.label)
+
+      assert Enum.sort(Enum.uniq([PhoenixKitDb.permission_metadata().label | labels])) ==
+               Enum.sort(PhoenixKitDb.translatable_labels())
+    end
+
+    test "tab labels resolve through the module's catalogue" do
+      tabs = Map.new(PhoenixKitDb.admin_tabs(), &{&1.id, &1})
+
+      expected = %{
+        "ru" => %{
+          admin_db: "БД",
+          admin_db_overview: "Обзор",
+          admin_db_activity: "Активность",
+          admin_db_show: "Таблица"
+        },
+        "et" => %{
+          admin_db: "Andmebaas",
+          admin_db_overview: "Ülevaade",
+          admin_db_activity: "Tegevus",
+          admin_db_show: "Tabel"
+        }
+      }
+
+      for {locale, labels} <- expected, {id, label} <- labels do
+        Gettext.with_locale(PhoenixKitDb.Gettext, locale, fn ->
+          assert Tab.localized_label(tabs[id]) == label
+        end)
+      end
+    end
+
+    test "plurals follow each locale's forms" do
+      forms = fn locale, count ->
+        Gettext.with_locale(PhoenixKitDb.Gettext, locale, fn ->
+          Gettext.dngettext(PhoenixKitDb.Gettext, "default", "event", "events", count)
+        end)
+      end
+
+      assert Enum.map([1, 2, 5, 21], &forms.("ru", &1)) ==
+               ["событие", "события", "событий", "событие"]
+
+      assert Enum.map([1, 2], &forms.("et", &1)) == ["sündmus", "sündmust"]
+      assert Enum.map([1, 2], &forms.("en", &1)) == ["event", "events"]
+    end
+
+    test "no catalogue entry is left untranslated or fuzzy in et and ru" do
+      for locale <- ["et", "ru"] do
+        {:ok, po} =
+          :phoenix_kit_db
+          |> :code.priv_dir()
+          |> Path.join("gettext/#{locale}/LC_MESSAGES/default.po")
+          |> Expo.PO.parse_file()
+
+        assert length(po.messages) > 50
+
+        for message <- po.messages do
+          refute Enum.any?(message.flags, &("fuzzy" in &1)),
+                 "#{locale}: #{inspect(message.msgid)} is fuzzy"
+
+          refute message.msgstr |> msgstr_texts() |> Enum.any?(&(&1 == "")),
+                 "#{locale}: #{inspect(message.msgid)} has an empty translation"
+        end
+      end
+    end
+
+    test "the Hex package ships priv/, where the catalogues live" do
+      assert "priv" in Mix.Project.config()[:package][:files]
+    end
+
+    defp msgstr_texts(msgstr) when is_map(msgstr),
+      do: Enum.map(msgstr, fn {_form, parts} -> IO.iodata_to_binary(parts) end)
+
+    defp msgstr_texts(msgstr), do: [IO.iodata_to_binary(msgstr)]
   end
 
   describe "notify_channel/0" do
@@ -259,6 +332,13 @@ defmodule PhoenixKitDbTest do
 
       assert {:error, :invalid_identifier} =
                PhoenixKitDb.fetch_row("public", "table'); DROP TABLE x; --", 1)
+    end
+
+    test "rejects a name with a trailing newline" do
+      assert {:error, :invalid_identifier} = PhoenixKitDb.fetch_row("public", "users\n", 1)
+      assert {:error, :invalid_identifier} = PhoenixKitDb.fetch_row("public\n", "users", 1)
+      assert {:error, :invalid_identifier} = PhoenixKitDb.ensure_trigger("public", "users\n")
+      assert {:error, :invalid_identifier} = PhoenixKitDb.remove_trigger("public", "users\n")
     end
 
     test "rejects empty schema/table names" do

@@ -4,15 +4,16 @@ defmodule PhoenixKitDb.PubSub do
   backed by `PhoenixKit.PubSub.Manager` (the shared in-process PubSub
   server).
 
-  The Postgres `LISTEN/NOTIFY` channel itself
-  (`#{__MODULE__ |> Module.split() |> List.last() |> String.downcase()}_changes`)
-  is internal to `PhoenixKitDb.Listener` — these helpers wrap the
+  The Postgres `LISTEN/NOTIFY` channel itself (`phoenix_kit_db_changes`,
+  `PhoenixKitDb.notify_channel/0`) is internal to `PhoenixKitDb.Listener` —
+  these helpers wrap the
   per-LiveView fan-out that the Listener performs after parsing each
   notification.
 
   ## Topics
 
-    * `topic_all/0` — every mutation, regardless of table. Used by the
+    * `topic_all/0` — every mutation of every table that has a notification
+      trigger (a table gets one the first time it is viewed). Used by the
       Index page (table-list refresh) and the Activity page (live feed).
     * `topic_table/2` — mutations for one specific `schema.table`.
       Used by the Show page so a busy unrelated table doesn't refresh
@@ -21,9 +22,9 @@ defmodule PhoenixKitDb.PubSub do
   ## Events
 
   Messages are `{:table_changed, schema, table, operation, row_id}`
-  tuples. `operation` is `"INSERT"` / `"UPDATE"` / `"DELETE"` (or
-  `"UNKNOWN"` for a malformed payload). `row_id` may be `nil` when the
-  underlying row has neither a `uuid` nor an `id` column.
+  tuples. `operation` is `"INSERT"` / `"UPDATE"` / `"DELETE"`; a malformed
+  payload is dropped by the Listener and never broadcast. `row_id` may be
+  `nil` when the underlying row has neither a `uuid` nor an `id` column.
   """
 
   alias PhoenixKit.PubSub.Manager

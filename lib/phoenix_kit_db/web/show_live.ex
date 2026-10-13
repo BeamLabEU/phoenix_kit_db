@@ -6,8 +6,10 @@ defmodule PhoenixKitDb.Web.ShowLive do
   """
 
   use PhoenixKitWeb, :live_view
+  use Gettext, backend: PhoenixKitDb.Gettext
 
   alias PhoenixKitDb
+  alias PhoenixKitDb.Cells
   alias PhoenixKitDb.Listener
   alias PhoenixKitDb.Paths
 
@@ -16,9 +18,37 @@ defmodule PhoenixKitDb.Web.ShowLive do
   @default_per_page 20
   @allowed_per_page [10, 20, 50, 100, 200]
   @refresh_debounce_ms 1000
+  @highlight_ms 3000
+
+  # The scrollbar's page markers are one DOM node each. A table of a million
+  # rows has tens of thousands of pages, so only this many evenly spaced
+  # markers are rendered, whatever the table size.
+  @max_page_markers 25
+
+  # The preview is loaded in `handle_params/3` only. Both callbacks run on the
+  # dead render and again on the connected one, so loading it here as well
+  # would double every query, the row count included.
+  @impl true
+  def mount(%{"schema" => schema, "table" => table}, _session, socket) do
+    socket =
+      socket
+      |> assign(:page_section, gettext("DB"))
+      |> assign(:page_section_path, Paths.index())
+      |> assign(:page_crumbs, [])
+      |> assign(:page_title, "#{schema}.#{table}")
+      # ^ schema/table are programmatic identifiers — not translatable.
+      |> assign(:schema, schema)
+      |> assign(:table, table)
+      |> assign(:highlighted_rows, [])
+      |> assign(:refresh_scheduled, false)
+      |> assign(:live_updates, :pending)
+
+    {:ok, socket}
+  end
 
   @impl true
-  def mount(%{"schema" => schema, "table" => table} = params, _session, socket) do
+  def handle_params(params, _uri, socket) do
+    %{schema: schema, table: table} = socket.assigns
     page = parse_page(params["page"])
     per_page = parse_per_page(params["per_page"])
 
@@ -28,76 +58,55 @@ defmodule PhoenixKitDb.Web.ShowLive do
       # Either the schema/table contains unsafe characters, or the
       # table doesn't exist. Bail to /admin/db with a flash rather than
       # render an empty grid.
-      {:ok,
+      {:noreply,
        socket
        |> put_flash(
          :error,
-         Gettext.gettext(PhoenixKitWeb.Gettext, "Table %{schema}.%{table} not found",
-           schema: schema,
-           table: table
-         )
+         gettext("Table %{schema}.%{table} not found", schema: schema, table: table)
        )
-       |> push_navigate(to: PhoenixKitDb.Paths.index())}
+       |> push_navigate(to: Paths.index())}
     else
-      if connected?(socket), do: setup_live_updates(schema, table)
-
-      socket =
-        socket
-        |> assign(:page_section, Gettext.gettext(PhoenixKitWeb.Gettext, "DB"))
-        |> assign(:page_section_path, Paths.index())
-        |> assign(:page_crumbs, [])
-        |> assign(:page_title, "#{schema}.#{table}")
-        # ^ schema/table are programmatic identifiers — not translatable.
-        |> assign(:schema, schema)
-        |> assign(:table, table)
-        |> assign(:per_page, per_page)
-        |> assign(:preview, preview)
-        |> assign(:highlighted_rows, [])
-        |> assign(:refresh_scheduled, false)
-
-      {:ok, socket}
+      {:noreply,
+       socket
+       |> assign(:per_page, per_page)
+       |> assign(:preview, preview)
+       |> setup_live_updates()}
     end
   end
 
-  # Note: subscribe runs AFTER table_preview/3 in mount above. Standard
-  # PubSub practice is subscribe-before-read, but here we want to
+  # Runs once, on the connected render, AFTER the first `table_preview/3`.
+  # Standard PubSub practice is subscribe-before-read, but here we want to
   # validate the table exists before leaking a subscription on bogus
   # identifiers. Cost: a broadcast in the gap is dropped; the next
   # `:table_changed` arrival catches the LV up.
-  defp setup_live_updates(schema, table) do
-    Listener.subscribe(schema, table)
+  defp setup_live_updates(%{assigns: %{live_updates: :pending}} = socket) do
+    if connected?(socket) do
+      %{schema: schema, table: table} = socket.assigns
+      Listener.subscribe(schema, table)
+      assign(socket, :live_updates, install_trigger(schema, table))
+    else
+      socket
+    end
+  end
 
+  defp setup_live_updates(socket), do: socket
+
+  defp install_trigger(schema, table) do
     case PhoenixKitDb.ensure_trigger(schema, table) do
       :ok ->
-        :ok
+        :on
 
       {:error, reason} ->
-        # Trigger install failed (DB permissions, transient error, etc.).
-        # The LV stays usable; live updates simply won't fire until
-        # something else installs the trigger.
+        # Trigger install failed (the table lock was not granted in time, DB
+        # permissions, a transient error). The LV stays usable and says so;
+        # the next view of the table tries again.
         Logger.warning(
           "[#{inspect(__MODULE__)}] ensure_trigger(#{inspect(schema)}, " <>
             "#{inspect(table)}) failed: #{inspect(reason)}"
         )
+
+        :unavailable
     end
-  end
-
-  @impl true
-  def handle_params(params, _uri, socket) do
-    page = parse_page(params["page"])
-    per_page = parse_per_page(params["per_page"])
-
-    preview =
-      PhoenixKitDb.table_preview(
-        socket.assigns.schema,
-        socket.assigns.table,
-        %{page: page, per_page: per_page}
-      )
-
-    {:noreply,
-     socket
-     |> assign(:per_page, per_page)
-     |> assign(:preview, preview)}
   end
 
   @impl true
@@ -130,7 +139,6 @@ defmodule PhoenixKitDb.Web.ShowLive do
     socket = assign(socket, :refresh_scheduled, false)
 
     old_preview = socket.assigns.preview
-    old_row_count = old_preview.row_count
 
     new_preview =
       PhoenixKitDb.table_preview(socket.assigns.schema, socket.assigns.table, %{
@@ -138,20 +146,19 @@ defmodule PhoenixKitDb.Web.ShowLive do
         per_page: socket.assigns.per_page
       })
 
-    {added_count, removed_count, changed_on_page} =
-      detect_changes(old_preview.rows, new_preview.rows, old_row_count, new_preview.row_count)
+    {added_count, removed_count, changed_on_page} = detect_changes(old_preview, new_preview)
 
-    highlighted_ids = find_new_or_changed_rows(old_preview.rows, new_preview.rows)
+    highlighted = find_new_or_changed_rows(old_preview, new_preview)
 
     socket = add_change_notification(socket, added_count, removed_count, changed_on_page)
 
     socket =
       socket
       |> assign(:preview, new_preview)
-      |> assign(:highlighted_rows, highlighted_ids)
+      |> assign(:highlighted_rows, highlighted)
 
-    if highlighted_ids != [] do
-      Process.send_after(self(), :clear_highlights, 3000)
+    if highlighted != [] do
+      Process.send_after(self(), :clear_highlights, @highlight_ms)
     end
 
     {:noreply, socket}
@@ -179,14 +186,21 @@ defmodule PhoenixKitDb.Web.ShowLive do
     end
   end
 
-  def format_cell(value) when is_map(value), do: Jason.encode!(value)
-  def format_cell(value) when is_list(value), do: inspect(value)
-
-  def format_cell(value) when is_binary(value) do
-    if String.valid?(value), do: value, else: inspect(value)
+  @doc """
+  The pages that get a marker beside the scrollbar: all of them while they
+  fit in #{@max_page_markers}, otherwise that many evenly spaced ones, always
+  including the first and the last.
+  """
+  @spec page_markers(pos_integer()) :: [pos_integer()]
+  def page_markers(total_pages) when total_pages <= @max_page_markers do
+    Enum.to_list(1..max(total_pages, 1))
   end
 
-  def format_cell(value), do: to_string(value || "")
+  def page_markers(total_pages) do
+    last = @max_page_markers - 1
+
+    Enum.map(0..last, fn index -> 1 + round(index * (total_pages - 1) / last) end)
+  end
 
   defp parse_page(nil), do: 1
   defp parse_page(value) when is_integer(value) and value > 0, do: value
@@ -237,49 +251,43 @@ defmodule PhoenixKitDb.Web.ShowLive do
     end
   end
 
-  defp detect_changes(old_rows, new_rows, old_count, new_count) do
-    added_count = max(0, new_count - old_count)
-    removed_count = max(0, old_count - new_count)
-    changed_on_page = rows_changed_on_page?(old_rows, new_rows)
+  # An estimated total drifts between two reads without a single row having
+  # changed, so it says nothing about rows added or removed.
+  defp detect_changes(old_preview, new_preview) do
+    changed_on_page = old_preview.rows != new_preview.rows
 
-    {added_count, removed_count, changed_on_page}
+    if old_preview.row_count_approx or new_preview.row_count_approx do
+      {0, 0, changed_on_page}
+    else
+      added_count = max(0, new_preview.row_count - old_preview.row_count)
+      removed_count = max(0, old_preview.row_count - new_preview.row_count)
+
+      {added_count, removed_count, changed_on_page}
+    end
   end
 
-  defp rows_changed_on_page?(old_rows, new_rows) do
-    length(old_rows) != length(new_rows) or old_rows != new_rows
+  defp find_new_or_changed_rows(old_preview, new_preview) do
+    old_by_key = rows_by_key(old_preview)
+
+    for {key, row} <- rows_by_key(new_preview), Map.get(old_by_key, key) != row do
+      key
+    end
   end
 
-  defp find_new_or_changed_rows(old_rows, new_rows) do
-    old_by_id = rows_by_identifier(old_rows)
-    new_by_id = rows_by_identifier(new_rows)
-
-    new_ids =
-      new_by_id
-      |> Map.keys()
-      |> Enum.filter(fn id -> not Map.has_key?(old_by_id, id) end)
-
-    changed_ids =
-      new_by_id
-      |> Enum.filter(fn {id, row} ->
-        case Map.get(old_by_id, id) do
-          nil -> false
-          old_row -> old_row != row
-        end
-      end)
-      |> Enum.map(fn {id, _} -> id end)
-
-    new_ids ++ changed_ids
-  end
-
-  defp rows_by_identifier(rows) do
+  defp rows_by_key(%{rows: rows, primary_key: primary_key}) do
     rows
     |> Enum.with_index()
-    |> Enum.map(fn {row, idx} ->
-      id = Map.get(row, "id") || Map.get(row, :id) || "idx_#{idx}"
-      {id, row}
-    end)
-    |> Map.new()
+    |> Map.new(fn {row, index} -> {row_key(row, index, primary_key), row} end)
   end
+
+  @doc """
+  What tells a row apart from the others on its page: the values of the
+  table's primary key columns, or its position when the table has no usable
+  primary key.
+  """
+  @spec row_key(map(), non_neg_integer(), [String.t()]) :: term()
+  def row_key(_row, index, []), do: {:index, index}
+  def row_key(row, _index, primary_key), do: Enum.map(primary_key, &Map.get(row, &1))
 
   defp add_change_notification(socket, 0, 0, false), do: socket
 
@@ -300,39 +308,24 @@ defmodule PhoenixKitDb.Web.ShowLive do
   defp append_added_message(messages, 0), do: messages
 
   defp append_added_message(messages, added) do
-    messages ++
-      [
-        Gettext.ngettext(
-          PhoenixKitWeb.Gettext,
-          "%{count} row added",
-          "%{count} rows added",
-          added
-        )
-      ]
+    messages ++ [ngettext("%{count} row added", "%{count} rows added", added)]
   end
 
   defp append_removed_message(messages, 0), do: messages
 
   defp append_removed_message(messages, removed) do
-    messages ++
-      [
-        Gettext.ngettext(
-          PhoenixKitWeb.Gettext,
-          "%{count} row removed",
-          "%{count} rows removed",
-          removed
-        )
-      ]
+    messages ++ [ngettext("%{count} row removed", "%{count} rows removed", removed)]
   end
 
   defp append_updated_message(messages, 0, 0, true) do
-    messages ++ [Gettext.gettext(PhoenixKitWeb.Gettext, "Data updated")]
+    messages ++ [gettext("Data updated")]
   end
 
   defp append_updated_message(messages, _added, _removed, _changed), do: messages
 
-  def row_highlighted?(row, highlighted_rows) do
-    id = Map.get(row, "id") || Map.get(row, :id)
-    id != nil and id in highlighted_rows
+  def row_highlighted?(row, index, primary_key, highlighted_rows) do
+    highlighted_rows != [] and row_key(row, index, primary_key) in highlighted_rows
   end
+
+  defp format_cell(value), do: Cells.format(value)
 end

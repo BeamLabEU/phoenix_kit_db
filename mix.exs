@@ -20,7 +20,7 @@ defmodule PhoenixKitDb.MixProject do
       package: package(),
 
       # Dialyzer
-      dialyzer: [plt_add_apps: [:phoenix_kit]],
+      dialyzer: [plt_add_apps: [:phoenix_kit], ignore_warnings: ".dialyzer_ignore.exs"],
 
       # Docs
       name: "PhoenixKitDb",
@@ -31,7 +31,7 @@ defmodule PhoenixKitDb.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :phoenix_kit]
+      extra_applications: [:logger, :gettext, :phoenix_kit]
     ]
   end
 
@@ -91,6 +91,7 @@ defmodule PhoenixKitDb.MixProject do
       # through every later 2.x minor (see test/core_pin_conformance_test.exs).
       pk_dep(:phoenix_kit, ">= 2.38.0 and < 3.0.0"),
       {:phoenix_live_view, "~> 1.1"},
+      {:gettext, "~> 1.0"},
 
       # Postgrex.Notifications drives the live-update Listener.
       {:postgrex, "~> 0.17"},

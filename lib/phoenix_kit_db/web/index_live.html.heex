@@ -1,8 +1,8 @@
 <div class="container flex-col mx-auto px-4 py-6">
     <.admin_page_header
       back={PhoenixKit.Utils.Routes.path("/admin")}
-      title={Gettext.gettext(PhoenixKitWeb.Gettext, "DB")}
-      subtitle={Gettext.gettext(PhoenixKitWeb.Gettext, "Explore database tables and their contents")}
+      title={gettext("DB")}
+      subtitle={gettext("Explore database tables and their contents")}
     />
 
     <%!-- Actions --%>
@@ -11,48 +11,46 @@
         navigate={PhoenixKitDb.Paths.activity()}
         class="btn btn-ghost btn-sm"
       >
-        <.icon name="hero-signal" class="w-4 h-4 mr-2" /> {Gettext.gettext(
-          PhoenixKitWeb.Gettext,
-          "Live Activity"
+        <.icon name="hero-signal" class="w-4 h-4 mr-2" /> {gettext("Live Activity"
         )}
       </.link>
     </div>
 
     <div class="grid gap-4 md:grid-cols-4">
       <div class="stat bg-base-100 shadow rounded-box">
-        <div class="stat-title">{Gettext.gettext(PhoenixKitWeb.Gettext, "Tables")}</div>
+        <div class="stat-title">{gettext("Tables")}</div>
         <div class="stat-value text-primary">
           <.formatted_number number={@stats.table_count} />
         </div>
-        <div class="stat-desc">{Gettext.gettext(PhoenixKitWeb.Gettext, "Application tables")}</div>
+        <div class="stat-desc">{gettext("Application tables")}</div>
       </div>
       <div class="stat bg-base-100 shadow rounded-box">
-        <div class="stat-title">{Gettext.gettext(PhoenixKitWeb.Gettext, "Rows")}</div>
+        <div class="stat-title">{gettext("Rows")}</div>
         <div class="stat-value text-secondary">
           <.formatted_number number={@stats.approx_rows} format={:short} />
         </div>
-        <div class="stat-desc">{Gettext.gettext(PhoenixKitWeb.Gettext, "Summed live tuples")}</div>
+        <div class="stat-desc">{gettext("Summed live tuples")}</div>
       </div>
       <div class="stat bg-base-100 shadow rounded-box">
-        <div class="stat-title">{Gettext.gettext(PhoenixKitWeb.Gettext, "Tables Size")}</div>
+        <div class="stat-title">{gettext("Tables Size")}</div>
         <div class="stat-value text-accent"><.file_size bytes={@stats.total_size_bytes} /></div>
-        <div class="stat-desc">{Gettext.gettext(PhoenixKitWeb.Gettext, "App data + indexes")}</div>
+        <div class="stat-desc">{gettext("App data + indexes")}</div>
       </div>
       <div class="stat bg-base-100 shadow rounded-box">
-        <div class="stat-title">{Gettext.gettext(PhoenixKitWeb.Gettext, "Database Size")}</div>
+        <div class="stat-title">{gettext("Database Size")}</div>
         <div class="stat-value text-info"><.file_size bytes={@stats.database_size_bytes} /></div>
-        <div class="stat-desc">{Gettext.gettext(PhoenixKitWeb.Gettext, "Full pg_database_size")}</div>
+        <div class="stat-desc">{gettext("Full pg_database_size")}</div>
       </div>
     </div>
 
     <div class="bg-base-100 rounded-box shadow border border-base-200">
       <div class="p-4 border-b border-base-200">
-        <.form for={%{}} phx-change="search">
+        <.form for={%{}} id="db-table-search" phx-change="search">
           <.input
             name="search"
-            label={Gettext.gettext(PhoenixKitWeb.Gettext, "Search tables")}
+            label={gettext("Search tables")}
             value={@search}
-            placeholder={Gettext.gettext(PhoenixKitWeb.Gettext, "Filter by schema or table name")}
+            placeholder={gettext("Filter by schema or table name")}
             phx-debounce="300"
           />
         </.form>
@@ -62,9 +60,9 @@
         <table class="table">
           <thead>
             <tr>
-              <th>{Gettext.gettext(PhoenixKitWeb.Gettext, "Table")}</th>
-              <th class="text-right">{Gettext.gettext(PhoenixKitWeb.Gettext, "Rows")}</th>
-              <th class="text-right">{Gettext.gettext(PhoenixKitWeb.Gettext, "Size")}</th>
+              <th>{gettext("Table")}</th>
+              <th class="text-right">{gettext("Rows")}</th>
+              <th class="text-right">{gettext("Size")}</th>
               <th></th>
             </tr>
           </thead>
@@ -72,7 +70,7 @@
             <%= if Enum.empty?(@tables.entries) do %>
               <tr>
                 <td colspan="4" class="text-center py-8 text-base-content/70">
-                  {Gettext.gettext(PhoenixKitWeb.Gettext, "No tables found.")}
+                  {gettext("No tables found.")}
                 </td>
               </tr>
             <% else %>
@@ -107,14 +105,24 @@
         </table>
       </div>
 
+      <p
+        :if={@tables.hidden_count > 0}
+        id="db-hidden-tables"
+        class="px-4 py-2 text-xs text-base-content/60 border-t border-base-200"
+      >
+        {ngettext(
+          "%{count} table is not listed: its schema or table name has characters outside letters, digits and underscore, which this page cannot open.",
+          "%{count} tables are not listed: their schema or table names have characters outside letters, digits and underscore, which this page cannot open.",
+          @tables.hidden_count
+        )}
+      </p>
+
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-4 py-3 border-t border-base-200">
         <div class="text-sm text-base-content/70">
-          {Gettext.gettext(PhoenixKitWeb.Gettext, "Page %{page} of %{total}",
+          {gettext("Page %{page} of %{total}",
             page: @tables.page,
             total: @tables.total_pages
-          )} • <.formatted_number number={@tables.total_entries} /> {Gettext.ngettext(
-            PhoenixKitWeb.Gettext,
-            "table",
+          )} • <.formatted_number number={@tables.total_entries} /> {ngettext("table",
             "tables",
             @tables.total_entries
           )}
@@ -126,7 +134,7 @@
             phx-value-page={@tables.page - 1}
             disabled={@tables.page <= 1}
           >
-            « {Gettext.gettext(PhoenixKitWeb.Gettext, "Prev")}
+            « {gettext("Prev")}
           </button>
           <button
             class="btn btn-sm"
@@ -134,7 +142,7 @@
             phx-value-page={@tables.page + 1}
             disabled={@tables.page >= @tables.total_pages}
           >
-            {Gettext.gettext(PhoenixKitWeb.Gettext, "Next")} »
+            {gettext("Next")} »
           </button>
         </div>
       </div>

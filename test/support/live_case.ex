@@ -37,6 +37,9 @@ defmodule PhoenixKitDb.LiveCase do
       import Phoenix.LiveViewTest
       import PhoenixKitDb.ActivityLogAssertions
       import PhoenixKitDb.LiveCase
+
+      alias PhoenixKitDb.Fixtures
+      alias PhoenixKitDb.QueryCounter
     end
   end
 
@@ -92,6 +95,20 @@ defmodule PhoenixKitDb.LiveCase do
       cached_permissions: MapSet.new(permissions)
     }
   end
+
+  @doc """
+  The trimmed text of every element matching `selector`, in document order.
+  Reads the page the way a person does: entities decoded, markup gone.
+  """
+  def texts(html, selector) when is_binary(html) do
+    html
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query(selector)
+    |> Enum.map(fn node -> node |> LazyHTML.text() |> String.trim() end)
+  end
+
+  @doc "The LiveView's current assigns, for asserting what the server holds."
+  def assigns(view), do: :sys.get_state(view.pid).socket.assigns
 
   @doc """
   Plugs a fake scope into the test conn's session so the test

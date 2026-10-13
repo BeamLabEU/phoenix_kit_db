@@ -7,6 +7,7 @@ defmodule PhoenixKitDb.Web.IndexLive do
   """
 
   use PhoenixKitWeb, :live_view
+  use Gettext, backend: PhoenixKitDb.Gettext
 
   alias PhoenixKitDb
   alias PhoenixKitDb.Listener
@@ -16,22 +17,18 @@ defmodule PhoenixKitDb.Web.IndexLive do
 
   @refresh_debounce_ms 2000
 
+  # The table list is loaded in `handle_params/3` only. Both callbacks run on
+  # the dead render and again on the connected one, so loading it here as
+  # well would double the queries.
   @impl true
-  def mount(params, _session, socket) do
-    page = parse_int(params["page"], 1)
-    search = params["search"] || ""
-
+  def mount(_params, _session, socket) do
     if connected?(socket) do
       Listener.subscribe_all()
     end
 
-    tables = PhoenixKitDb.list_tables(%{page: page, search: search})
-
     socket =
       socket
-      |> assign(:page_title, Gettext.gettext(PhoenixKitWeb.Gettext, "DB"))
-      |> assign(:search, search)
-      |> assign(:tables, tables)
+      |> assign(:page_title, gettext("DB"))
       |> assign(:stats, PhoenixKitDb.database_stats())
       |> assign(:refresh_scheduled, false)
 

@@ -1,0 +1,348 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: ru\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100 != 11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10||n%100>=20) ? 1 : 2);\n"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:90
+#, elixir-autogen, elixir-format
+msgid "%{count} event skipped: changes arrived faster than this page can show them."
+msgid_plural "%{count} events skipped: changes arrived faster than this page can show them."
+msgstr[0] "%{count} событие пропущено: изменения поступали быстрее, чем страница успевает их показывать."
+msgstr[1] "%{count} события пропущено: изменения поступали быстрее, чем страница успевает их показывать."
+msgstr[2] "%{count} событий пропущено: изменения поступали быстрее, чем страница успевает их показывать."
+
+#: lib/phoenix_kit_db/web/show_live.ex:311
+#, elixir-autogen, elixir-format
+msgid "%{count} row added"
+msgid_plural "%{count} rows added"
+msgstr[0] "%{count} строка добавлена"
+msgstr[1] "%{count} строки добавлено"
+msgstr[2] "%{count} строк добавлено"
+
+#: lib/phoenix_kit_db/web/show_live.ex:317
+#, elixir-autogen, elixir-format
+msgid "%{count} row removed"
+msgid_plural "%{count} rows removed"
+msgstr[0] "%{count} строка удалена"
+msgstr[1] "%{count} строки удалено"
+msgstr[2] "%{count} строк удалено"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:113
+#, elixir-autogen, elixir-format
+msgid "%{count} table is not listed: its schema or table name has characters outside letters, digits and underscore, which this page cannot open."
+msgid_plural "%{count} tables are not listed: their schema or table names have characters outside letters, digits and underscore, which this page cannot open."
+msgstr[0] "%{count} таблица не показана: в имени её схемы или таблицы есть символы, кроме букв, цифр и подчёркивания, и эта страница не может её открыть."
+msgstr[1] "%{count} таблицы не показаны: в именах их схем или таблиц есть символы, кроме букв, цифр и подчёркивания, и эта страница не может их открыть."
+msgstr[2] "%{count} таблиц не показано: в именах их схем или таблиц есть символы, кроме букв, цифр и подчёркивания, и эта страница не может их открыть."
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:191
+#, elixir-autogen, elixir-format
+msgid "(table may not have an 'id' column)"
+msgstr "(возможно, в таблице нет столбца 'id')"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:110
+#, elixir-autogen, elixir-format
+msgid "A table is watched from the first time its page is opened."
+msgstr "Таблица отслеживается с момента первого открытия её страницы."
+
+#: lib/phoenix_kit_db.ex:217
+#: lib/phoenix_kit_db/web/activity_live.ex:58
+#, elixir-autogen, elixir-format
+msgid "Activity"
+msgstr "Активность"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:66
+#, elixir-autogen, elixir-format
+msgid "All"
+msgstr "Все"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:50
+#, elixir-autogen, elixir-format
+msgid "All tables"
+msgstr "Все таблицы"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:37
+#, elixir-autogen, elixir-format
+msgid "App data + indexes"
+msgstr "Данные приложения + индексы"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:25
+#, elixir-autogen, elixir-format
+msgid "Application tables"
+msgstr "Таблицы приложения"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:36
+#, elixir-autogen, elixir-format
+msgid "Clear"
+msgstr "Очистить"
+
+#: lib/phoenix_kit_db.ex:215
+#: lib/phoenix_kit_db/web/activity_live.ex:55
+#: lib/phoenix_kit_db/web/index_live.ex:31
+#: lib/phoenix_kit_db/web/index_live.html.heex:4
+#: lib/phoenix_kit_db/web/show_live.ex:35
+#, elixir-autogen, elixir-format
+msgid "DB"
+msgstr "БД"
+
+#: lib/phoenix_kit_db/web/show_live.ex:321
+#, elixir-autogen, elixir-format
+msgid "Data updated"
+msgstr "Данные обновлены"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:40
+#, elixir-autogen, elixir-format
+msgid "Database Size"
+msgstr "Размер базы данных"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:5
+#, elixir-autogen, elixir-format
+msgid "Explore database tables and their contents"
+msgstr "Просмотр таблиц базы данных и их содержимого"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:53
+#, elixir-autogen, elixir-format
+msgid "Filter by schema or table name"
+msgstr "Фильтр по имени схемы или таблицы"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:75
+#, elixir-autogen, elixir-format
+msgid "First page"
+msgstr "Первая страница"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:42
+#, elixir-autogen, elixir-format
+msgid "Full pg_database_size"
+msgstr "Полный pg_database_size"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:107
+#, elixir-autogen, elixir-format
+msgid "INSERT, UPDATE, and DELETE operations will appear here in real-time"
+msgstr "Операции INSERT, UPDATE и DELETE появятся здесь в реальном времени"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:108
+#, elixir-autogen, elixir-format
+msgid "Last page"
+msgstr "Последняя страница"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:14
+#: lib/phoenix_kit_db/web/show_live.html.heex:21
+#, elixir-autogen, elixir-format
+msgid "Live Activity"
+msgstr "Активность в реальном времени"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:7
+#, elixir-autogen, elixir-format
+msgid "Live Database Activity"
+msgstr "Активность базы данных в реальном времени"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Live updates are not available for this table right now. The rows below are current as of this page load; reload to try again."
+msgstr "Обновления в реальном времени для этой таблицы сейчас недоступны. Строки ниже актуальны на момент загрузки страницы; перезагрузите её, чтобы попробовать снова."
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:145
+#, elixir-autogen, elixir-format
+msgid "Next"
+msgstr "Далее"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:99
+#, elixir-autogen, elixir-format
+msgid "Next page"
+msgstr "Следующая страница"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:144
+#, elixir-autogen, elixir-format
+msgid "No rows found."
+msgstr "Строки не найдены."
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:73
+#, elixir-autogen, elixir-format
+msgid "No tables found."
+msgstr "Таблицы не найдены."
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:62
+#, elixir-autogen, elixir-format
+msgid "Operation"
+msgstr "Операция"
+
+#: lib/phoenix_kit_db.ex:216
+#, elixir-autogen, elixir-format
+msgid "Overview"
+msgstr "Обзор"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:122
+#: lib/phoenix_kit_db/web/show_live.html.heex:89
+#, elixir-autogen, elixir-format
+msgid "Page %{page} of %{total}"
+msgstr "Страница %{page} из %{total}"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Pause"
+msgstr "Пауза"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:137
+#, elixir-autogen, elixir-format
+msgid "Prev"
+msgstr "Назад"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:84
+#, elixir-autogen, elixir-format
+msgid "Previous page"
+msgstr "Предыдущая страница"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:30
+#, elixir-autogen, elixir-format
+msgid "Resume"
+msgstr "Продолжить"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:189
+#, elixir-autogen, elixir-format
+msgid "Row data not available"
+msgstr "Данные строки недоступны"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:185
+#, elixir-autogen, elixir-format
+msgid "Row deleted (data not available)"
+msgstr "Строка удалена (данные недоступны)"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:28
+#: lib/phoenix_kit_db/web/index_live.html.heex:64
+#, elixir-autogen, elixir-format
+msgid "Rows"
+msgstr "Строки"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:51
+#, elixir-autogen, elixir-format
+msgid "Search tables"
+msgstr "Поиск таблиц"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:57
+#, elixir-autogen, elixir-format
+msgid "Show"
+msgstr "Показывать"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:18
+#, elixir-autogen, elixir-format
+msgid "Showing changes to tables that have been opened in the DB explorer"
+msgstr "Показываются изменения в таблицах, которые открывались в обозревателе БД"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:65
+#, elixir-autogen, elixir-format
+msgid "Size"
+msgstr "Размер"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Summed live tuples"
+msgstr "Сумма живых кортежей"
+
+#: lib/phoenix_kit_db.ex:218
+#: lib/phoenix_kit_db/web/activity_live.html.heex:46
+#: lib/phoenix_kit_db/web/index_live.html.heex:63
+#, elixir-autogen, elixir-format
+msgid "Table"
+msgstr "Таблица"
+
+#: lib/phoenix_kit_db/web/show_live.ex:65
+#, elixir-autogen, elixir-format
+msgid "Table %{schema}.%{table} not found"
+msgstr "Таблица %{schema}.%{table} не найдена"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:21
+#, elixir-autogen, elixir-format
+msgid "Tables"
+msgstr "Таблицы"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:35
+#, elixir-autogen, elixir-format
+msgid "Tables Size"
+msgstr "Размер таблиц"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:104
+#, elixir-autogen, elixir-format
+msgid "Waiting for database activity..."
+msgstr "Ожидание активности базы данных..."
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:47
+#, elixir-autogen, elixir-format
+msgid "about %{count} row total (estimate)"
+msgid_plural "about %{count} rows total (estimate)"
+msgstr[0] "около %{count} строки всего (оценка)"
+msgstr[1] "около %{count} строк всего (оценка)"
+msgstr[2] "около %{count} строк всего (оценка)"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:151
+#, elixir-autogen, elixir-format
+msgid "changed"
+msgstr "изменено"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:80
+#, elixir-autogen, elixir-format
+msgid "event"
+msgid_plural "events"
+msgstr[0] "событие"
+msgstr[1] "события"
+msgstr[2] "событий"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:130
+#, elixir-autogen, elixir-format
+msgid "id:"
+msgstr "id:"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:148
+#, elixir-autogen, elixir-format
+msgid "new"
+msgstr "новое"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:158
+#: lib/phoenix_kit_db/web/show_live.html.heex:157
+#, elixir-autogen, elixir-format
+msgid "null"
+msgstr "null"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:65
+#, elixir-autogen, elixir-format
+msgid "per page"
+msgstr "на странице"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:7
+#, elixir-autogen, elixir-format
+msgid "row"
+msgid_plural "rows"
+msgstr[0] "строка"
+msgstr[1] "строки"
+msgstr[2] "строк"
+
+#: lib/phoenix_kit_db/web/show_live.html.heex:53
+#, elixir-autogen, elixir-format
+msgid "row total"
+msgid_plural "rows total"
+msgstr[0] "строка всего"
+msgstr[1] "строки всего"
+msgstr[2] "строк всего"
+
+#: lib/phoenix_kit_db/web/index_live.html.heex:125
+#, elixir-autogen, elixir-format
+msgid "table"
+msgid_plural "tables"
+msgstr[0] "таблица"
+msgstr[1] "таблицы"
+msgstr[2] "таблиц"
+
+#: lib/phoenix_kit_db/web/activity_live.html.heex:12
+#, elixir-autogen, elixir-format
+msgid "Paused — %{count} event captured"
+msgid_plural "Paused — %{count} events captured"
+msgstr[0] "Пауза — записано %{count} событие"
+msgstr[1] "Пауза — записано %{count} события"
+msgstr[2] "Пауза — записано %{count} событий"
