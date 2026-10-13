@@ -151,6 +151,16 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
   end
 
+  describe "the page loads its data once per render pass" do
+    test "one table listing for the dead render and one for the connected one", %{conn: conn} do
+      {{:ok, _view, _html}, statements} =
+        QueryCounter.capture(fn -> live(conn, "/en/admin/db/activity") end)
+
+      listings = Enum.filter(statements, &(&1 =~ "pg_stat_user_tables" and &1 =~ "ORDER BY"))
+      assert length(listings) == 2
+    end
+  end
+
   describe "filters, through the form" do
     test "both selects sit in one form that sends one event", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/db/activity")

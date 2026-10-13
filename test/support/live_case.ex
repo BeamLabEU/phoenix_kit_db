@@ -15,7 +15,7 @@ defmodule PhoenixKitDb.LiveCase do
 
         test "renders the index page", %{conn: conn} do
           {:ok, _view, html} = live(conn, "/en/admin/db")
-          assert html =~ "Explore database tables"
+          assert html =~ "Filter by schema or table name"
         end
       end
 

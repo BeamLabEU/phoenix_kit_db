@@ -17,9 +17,9 @@ defmodule PhoenixKitDb.Web.IndexLive do
 
   @refresh_debounce_ms 2000
 
-  # The table list is loaded in `handle_params/3` only. Both callbacks run on
-  # the dead render and again on the connected one, so loading it here as
-  # well would double the queries.
+  # The table list and the stats are loaded in `handle_params/3` only. Both
+  # callbacks run on the dead render and again on the connected one, so loading
+  # either here as well would double the queries.
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -29,7 +29,6 @@ defmodule PhoenixKitDb.Web.IndexLive do
     socket =
       socket
       |> assign(:page_title, gettext("DB"))
-      |> assign(:stats, PhoenixKitDb.database_stats())
       |> assign(:refresh_scheduled, false)
 
     {:ok, socket}
@@ -45,7 +44,8 @@ defmodule PhoenixKitDb.Web.IndexLive do
     {:noreply,
      socket
      |> assign(:search, search)
-     |> assign(:tables, tables)}
+     |> assign(:tables, tables)
+     |> assign(:stats, PhoenixKitDb.database_stats())}
   end
 
   @impl true

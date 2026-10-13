@@ -86,18 +86,6 @@ defmodule PhoenixKitDb.ListenerTest do
       refute_receive {:table_changed, _, _, _, _}, 200
     end
 
-    test "swallows payload with too many colons", %{pid: pid} do
-      PubSub.subscribe(PubSub.topic_all())
-
-      send(
-        pid,
-        {:notification, self(), make_ref(), "phoenix_kit_db_changes",
-         "public.users:UPDATE:42:extra"}
-      )
-
-      refute_receive {:table_changed, _, _, _, _}, 200
-    end
-
     test "swallows empty payload", %{pid: pid} do
       PubSub.subscribe(PubSub.topic_all())
 
@@ -115,6 +103,20 @@ defmodule PhoenixKitDb.ListenerTest do
       )
 
       refute_receive {:table_changed, _, _, _, _}, 200
+    end
+  end
+
+  describe "a row id with colons of its own" do
+    test "is broadcast whole instead of dropping the event", %{pid: pid} do
+      PubSub.subscribe(PubSub.topic_all())
+
+      send(
+        pid,
+        {:notification, self(), make_ref(), "phoenix_kit_db_changes",
+         "public.sessions:UPDATE:user:42:web"}
+      )
+
+      assert_receive {:table_changed, "public", "sessions", "UPDATE", "user:42:web"}, 500
     end
   end
 

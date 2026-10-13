@@ -33,22 +33,16 @@ defmodule PhoenixKitDb.Web.ActivityLive do
   @buffer_key :phoenix_kit_db_activity_buffer
   @empty_buffer %{events: [], count: 0, dropped: 0, scheduled?: false}
 
+  # The table list is loaded in `handle_params/3` only. Both callbacks run on
+  # the dead render and again on the connected one, so loading it here as well
+  # would double the query.
   @impl true
-  def mount(params, _session, socket) do
+  def mount(_params, _session, socket) do
     if connected?(socket) do
       Listener.subscribe_all()
       # Make sure the trigger function exists with the row_id payload format.
       update_trigger_function()
     end
-
-    tables = load_tables()
-
-    initial_table_filter =
-      case params["table"] do
-        nil -> nil
-        "" -> nil
-        table -> table
-      end
 
     socket =
       socket
@@ -58,14 +52,24 @@ defmodule PhoenixKitDb.Web.ActivityLive do
       |> assign(:page_title, gettext("Activity"))
       |> assign(:activity_log, [])
       |> assign(:paused, false)
-      |> assign(:filter_table, initial_table_filter)
+      |> assign(:filter_table, nil)
       |> assign(:filter_operation, nil)
-      |> assign(:tables, tables)
+      |> assign(:tables, [])
       |> assign(:row_states, %{})
       |> assign(:skipped, 0)
       |> put_private(@buffer_key, @empty_buffer)
 
     {:ok, socket}
+  end
+
+  # `?table=` preselects the table filter. The filters themselves change over
+  # `phx-change` without a patch, so this runs once per render pass.
+  @impl true
+  def handle_params(params, _uri, socket) do
+    {:noreply,
+     socket
+     |> assign(:tables, load_tables())
+     |> assign(:filter_table, table_filter(params["table"]))}
   end
 
   # The whole list, not a page of it: `list_tables/1` clamps its page size, and

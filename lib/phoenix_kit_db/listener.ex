@@ -167,9 +167,11 @@ defmodule PhoenixKitDb.Listener do
   #   "schema.table:OPERATION:row_id"
   # The schema/table half always splits on ".", parts: 2; the operation
   # is one of {INSERT, UPDATE, DELETE}; row_id is the row's `uuid` or
-  # `id` cast to TEXT, or "" when the table has neither column.
+  # `id` cast to TEXT, or "" when the table has neither column. Only the first
+  # two colons delimit: a text `id` may contain colons of its own, and
+  # splitting on all of them would drop the event.
   defp parse_payload(payload) do
-    with [table_part, operation, row_id] <- String.split(payload, ":"),
+    with [table_part, operation, row_id] <- String.split(payload, ":", parts: 3),
          [schema, table] <- String.split(table_part, ".", parts: 2) do
       {schema, table, operation, normalize_row_id(row_id)}
     else

@@ -14,8 +14,11 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
     test "renders the page heading and stats cards", %{conn: conn} do
       {:ok, _view, html} = live(conn, "/en/admin/db")
 
-      # Heading + subtitle
-      assert html =~ "Explore database tables and their contents"
+      # Core renders a header subtitle only when the site-wide
+      # `show_page_descriptions` setting is on (off by default), so the
+      # heading is what this page owns.
+      assert [heading] = texts(html, "header h1")
+      assert heading == "DB"
 
       # Stats card titles (delta — gettext-wrapped now)
       for label <- ["Tables", "Rows", "Tables Size", "Database Size"] do
@@ -89,6 +92,13 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
       listings = Enum.filter(statements, &(&1 =~ "pg_stat_user_tables" and &1 =~ "LIMIT $"))
       assert length(listings) == 1
+    end
+
+    test "the database stats are read once per render pass too", %{conn: conn} do
+      {{:ok, _view, _html}, statements} =
+        QueryCounter.capture(fn -> live(conn, "/en/admin/db") end)
+
+      assert QueryCounter.count(statements, "pg_database_size") == 2
     end
   end
 
