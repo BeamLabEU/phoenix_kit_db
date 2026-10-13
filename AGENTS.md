@@ -77,10 +77,9 @@ rebroadcasts them via `PhoenixKitDb.PubSub`.
   Trigger install is runtime DDL, not a migration chain.
 - **No "reveal" control for a masked value.** A masked cell never reaches the
   LiveView, so there is nothing to un-hide; reading a secret is a `psql` job.
-- **No masking by content.** Only a column NAME (or a JSON key name) marks a
-  value as secret. A secret stored under a neutral name, such as a `value`
-  column, is shown, and a search over a JSON column still reads the masked
-  keys inside it.
+- **No masking by content.** Only a name marks a value as secret: the column's,
+  a JSON key's, or, for a row of a key/value table, the row's own `key` /
+  `name`. A secret stored under a neutral name in any other shape is shown.
 - **Does not open tables whose schema or table name is outside
   `[a-zA-Z0-9_]`.** They are left out of every list and counted on the Index
   page. Supporting them needs identifier quoting end to end, including the
@@ -160,8 +159,17 @@ Repo-local aliases and details:
   `PhoenixKitDb.Cells.sanitize_row/2` runs inside `table_preview/3` and
   `fetch_row/3`, so a value in a secret-named column (`Cells.secret_column?/1`)
   is the placeholder before it reaches an assign, the HTML or a diff. Any new
-  code path that reads rows must go through it, and row search must keep
-  skipping those columns. The same name rule masks keys inside JSON values.
+  code path that reads rows must go through it. The same name rule masks keys
+  inside JSON values and, when a row's `key` / `name` reads as a secret, that
+  row's `value*` columns.
+- **Row search reads nothing masking can hide**, or a hit on a masked row
+  confirms a guess at the hidden value. `Cells.searchable_column?/2` is the
+  one rule, built on the same name rule and key/value column names as
+  `sanitize_row/2`: no secret-named column, and no `value*` column on a table
+  that has a `key` or `name` column (which rows are masked depends on each
+  row's key, so the column is skipped for all of them). JSON columns are not
+  searched at all (`@textual_types`). A new masking rule in `Cells` needs its
+  counterpart there.
 - **One formatter, and it is total.** Both pages print a value through
   `PhoenixKitDb.Cells.format/2`, which never raises: an unknown term renders as
   its `inspect/1` form. Structs are matched before the plain-map clause
@@ -230,7 +238,12 @@ Repo-local aliases and details:
   request stalls all writers behind it. A timeout is `{:error, :lock_timeout}`:
   the Show page still loads and says live updates are unavailable.
 - **`disable_system/0` removes every trigger**, best effort: a failure is
-  logged and never blocks the disable.
+  logged and never blocks the disable, and nothing retries on its own. A
+  trigger whose drop timed out keeps firing `pg_notify` until someone calls
+  `PhoenixKitDb.remove_all_triggers()` (or `disable_system/0`) again. Both
+  read the leftovers from `pg_trigger`, so no state has to survive for the
+  retry to work; `remove_all_triggers/0` returns `{:error, tables}` while any
+  remain.
 - **ShowLive subscribes AFTER `table_preview/3`**, once, on the connected
   render, so a bogus identifier never
   leaks a subscription; a broadcast in that gap is dropped and the next
@@ -351,8 +364,9 @@ The Listener broadcasts every parsed notification on both topics.
   `information_schema.columns`; column types and the primary key from
   `pg_attribute` / `pg_index`; trigger presence from `pg_trigger`. Row preview
   orders by `uuid`, then `id`, then `ctid`; row search casts textual columns
-  (`text`, `character varying`, `citext`, `json`, `jsonb`, `uuid`, `inet`, ...)
-  to TEXT and `ILIKE`s them, skipping secret-named columns.
+  (`text`, `character varying`, `character`, `citext`, `uuid`, `inet`) to TEXT
+  and `ILIKE`s them, skipping every column `Cells.searchable_column?/2`
+  rejects.
 - Preview shape: `table_preview/3` also returns `:primary_key` (the columns
   that tell rows apart, `[]` when there are none or the key is masked) and
   `:row_count_approx`. Rows highlight by primary key, by position without one.

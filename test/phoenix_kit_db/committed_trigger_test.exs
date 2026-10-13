@@ -200,10 +200,19 @@ defmodule PhoenixKitDb.CommittedTriggerTest do
       assert log =~ "could not remove the trigger on public.#{@table}"
       assert PhoenixKitDb.has_trigger?("public", @table)
 
+      assert log =~ "run PhoenixKitDb.remove_all_triggers() again"
+
+      # Asked directly, it names the table it could not clean.
+      {again, _log} = with_log(fn -> PhoenixKitDb.remove_all_triggers() end)
+      assert {:error, [{"public", @table}]} = again
+
       release.()
 
-      assert :ok = PhoenixKitDb.remove_all_triggers()
+      # Nothing remembers the failure: a second disable finds the leftover in
+      # the catalog and removes it.
+      assert {:ok, _} = PhoenixKitDb.disable_system()
       refute PhoenixKitDb.has_trigger?("public", @table)
+      assert :ok = PhoenixKitDb.remove_all_triggers()
     end
   end
 

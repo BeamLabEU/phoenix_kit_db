@@ -12,9 +12,11 @@ defmodule PhoenixKitDb do
   Every row of every table in the database, read-only. Values in
   secret-named columns (`PhoenixKitDb.Cells.secret_column?/1`) are replaced
   with a fixed placeholder right after the query, on the Show page and in the
-  Activity feed alike, and row search skips those columns. A secret stored
-  under a neutral column name is NOT masked, so grant the `db` permission as
-  you would grant `psql` access.
+  Activity feed alike. Row search reads nothing masking can hide
+  (`PhoenixKitDb.Cells.searchable_column?/2`): not those columns, not JSON
+  columns, and not the `value*` columns of a table that has a `key` or `name`
+  column. A secret stored under a neutral column name is NOT masked, so grant
+  the `db` permission as you would grant `psql` access.
 
   ## Live Updates
 
@@ -63,7 +65,10 @@ defmodule PhoenixKitDb do
   # predicate. Must accept exactly what `safe_quote_ident/1` accepts.
   @supported_tables_sql "(schemaname ~ '^[a-zA-Z0-9_]+$' AND relname ~ '^[a-zA-Z0-9_]+$')"
 
-  @textual_types ~w(text character varying character citext json jsonb uuid inet)
+  # The column types row search reads. `json` and `jsonb` are absent on
+  # purpose: masking hides secret-named keys inside them, and a search over
+  # the whole document would still match the hidden values.
+  @textual_types ~w(text character varying character citext uuid inet)
 
   @typedoc "An identifier accepted by the schema/table-name validator."
   @type identifier_string :: String.t()
@@ -118,8 +123,9 @@ defmodule PhoenixKitDb do
 
   A trigger left behind keeps running `pg_notify` on every write to its table
   for as long as the table exists, with nobody listening. Removal is best
-  effort: a failure is logged and never blocks the disable, and
-  `remove_all_triggers/0` can be run again by hand.
+  effort: a failure is logged and never blocks the disable. Nothing retries
+  on its own. Leftovers are found in `pg_trigger`, not remembered, so calling
+  `disable_system/0` or `remove_all_triggers/0` again removes them.
   """
   @spec disable_system() :: term()
   def disable_system do
@@ -833,10 +839,12 @@ defmodule PhoenixKitDb do
   defp row_search_clause("", _columns), do: {"", []}
 
   defp row_search_clause(search, columns) do
+    column_names = Enum.map(columns, & &1.name)
+
     text_columns =
       Enum.filter(columns, fn column ->
         data_type = String.downcase(column.data_type || "")
-        data_type in @textual_types and not Cells.secret_column?(column.name)
+        data_type in @textual_types and Cells.searchable_column?(column.name, column_names)
       end)
 
     if text_columns == [] do
@@ -987,21 +995,30 @@ defmodule PhoenixKitDb do
   Removes all notification triggers from all tables.
 
   Best effort: a table whose trigger cannot be dropped (its lock was not
-  granted in time, say) is logged and skipped, and the rest still go.
+  granted in time, say) is logged and skipped, and the rest still go. Returns
+  `{:error, tables}` naming the tables that still carry a trigger. The tables
+  are read from `pg_trigger` on every call, so calling it again is the retry.
   """
-  @spec remove_all_triggers() :: :ok
+  @spec remove_all_triggers() :: :ok | {:error, [{String.t(), String.t()}]}
   def remove_all_triggers do
-    Enum.each(list_triggered_tables(), fn {schema, table} ->
-      case remove_trigger(schema, table) do
-        :ok ->
-          :ok
+    failed =
+      Enum.reject(list_triggered_tables(), fn {schema, table} ->
+        case remove_trigger(schema, table) do
+          :ok ->
+            true
 
-        {:error, reason} ->
-          Logger.warning(
-            "[PhoenixKitDb] could not remove the trigger on #{schema}.#{table}: #{inspect(reason)}"
-          )
-      end
-    end)
+          {:error, reason} ->
+            Logger.warning(
+              "[PhoenixKitDb] could not remove the trigger on #{schema}.#{table}: " <>
+                "#{inspect(reason)}. It keeps firing pg_notify on every write to that table; " <>
+                "run PhoenixKitDb.remove_all_triggers() again to remove it"
+            )
+
+            false
+        end
+      end)
+
+    if failed == [], do: :ok, else: {:error, failed}
   end
 
   # pg_trigger rather than information_schema.triggers: the latter lists only

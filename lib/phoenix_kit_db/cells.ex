@@ -97,6 +97,22 @@ defmodule PhoenixKitDb.Cells do
   defp value_column?(name) when is_binary(name), do: String.starts_with?(name, "value")
   defp value_column?(_name), do: false
 
+  @doc """
+  Whether row search may read a column, given every column name of its table.
+
+  Search must not match anything `sanitize_row/2` hides, or a hit on a masked
+  row confirms a guess at the hidden value. A secret-named column is never
+  read. Neither is a `value*` column of a table that has a `key` or `name`
+  column: which rows of such a table are masked depends on each row's own
+  key, so the column is left out for all of them. JSON columns are left out
+  by type, in the caller.
+  """
+  @spec searchable_column?(String.t(), [String.t()]) :: boolean()
+  def searchable_column?(name, column_names) when is_binary(name) and is_list(column_names) do
+    not secret_column?(name) and
+      not (value_column?(name) and Enum.any?(@key_columns, &(&1 in column_names)))
+  end
+
   defp sanitize_value(_name, nil, _kind), do: nil
 
   defp sanitize_value(name, value, kind) do

@@ -267,6 +267,100 @@ defmodule PhoenixKitDb.TablesTest do
     end
   end
 
+  describe "table_preview/3 search and what masking hides" do
+    defp search(table, term) do
+      QueryCounter.capture(fn ->
+        PhoenixKitDb.table_preview("public", table, %{search: term})
+      end)
+    end
+
+    test "a secret under a JSON key is not found, the row still is by a plain column" do
+      Fixtures.create_secrets_table()
+
+      for guess <- ["LEAK-nested", "LEAK-deep", "smtp_password"] do
+        {preview, statements} = search("pk_db_secrets", guess)
+
+        assert preview.rows == [], "searching #{inspect(guess)} found the row"
+        assert preview.row_count == 0
+
+        for statement <- statements, statement =~ "ILIKE" do
+          refute statement =~ ~s("settings"), "the search reads the JSON column"
+        end
+      end
+
+      {found, _} = search("pk_db_secrets", "plain note")
+      assert [%{"note" => "plain note"} = row] = found.rows
+      assert row["settings"]["smtp_password"] == Cells.masked_placeholder()
+    end
+
+    test "a json column is skipped like a jsonb one" do
+      Fixtures.sql!("CREATE TABLE pk_db_json (id int PRIMARY KEY, doc json, label text)")
+
+      Fixtures.sql!(
+        ~s|INSERT INTO pk_db_json VALUES (1, '{"api_token": "s3cr3t-json"}', 'json label')|
+      )
+
+      {missed, _} = search("pk_db_json", "s3cr3t-json")
+      assert missed.rows == []
+      assert missed.row_count == 0
+
+      {found, _} = search("pk_db_json", "json label")
+      assert [%{"doc" => %{"api_token" => masked}}] = found.rows
+      assert masked == Cells.masked_placeholder()
+    end
+
+    for key_column <- ~w(key name) do
+      test "a #{key_column}/value row with a secret #{key_column} is not found by its value" do
+        key_column = unquote(key_column)
+
+        Fixtures.sql!("""
+        CREATE TABLE pk_db_kv (
+          id int PRIMARY KEY, #{key_column} text, value text, value_text varchar(50), note text
+        )
+        """)
+
+        Fixtures.sql!("""
+        INSERT INTO pk_db_kv VALUES
+          (1, 'api_token', 's3cr3t-one', 's3cr3t-two', 'harmless note'),
+          (2, 'site_title', 'My Shop', 'shop text', 'other note')
+        """)
+
+        for guess <- ["s3cr3t-one", "s3cr3t-two", "s3cr3t"] do
+          {preview, statements} = search("pk_db_kv", guess)
+
+          assert preview.rows == [], "searching #{inspect(guess)} found the row"
+          assert preview.row_count == 0
+
+          for statement <- statements, statement =~ "ILIKE" do
+            refute statement =~ ~s("value")
+            refute statement =~ ~s("value_text")
+          end
+        end
+
+        # The masked row is still found by what the page shows of it.
+        for term <- ["harmless", "api_token"] do
+          {found, _} = search("pk_db_kv", term)
+
+          assert [%{"id" => 1} = row] = found.rows
+          assert row["value"] == Cells.masked_placeholder()
+          assert row["value_text"] == Cells.masked_placeholder()
+          assert row["note"] == "harmless note"
+        end
+
+        {plain, _} = search("pk_db_kv", "site_title")
+        assert [%{"id" => 2, "value" => "My Shop"}] = plain.rows
+      end
+    end
+
+    test "a value column is searched on a table with no key or name column" do
+      Fixtures.sql!("CREATE TABLE pk_db_values (id int PRIMARY KEY, label text, value text)")
+      Fixtures.sql!("INSERT INTO pk_db_values VALUES (1, 'api_token', 'findable value')")
+
+      {found, _} = search("pk_db_values", "findable")
+      assert [%{"value" => "findable value"}] = found.rows
+    end
+  end
+
   describe "table_preview/3 row total" do
     test "a large table reports the planner estimate and runs no COUNT" do
       Fixtures.sql!("CREATE TABLE pk_db_big (id int PRIMARY KEY)")
