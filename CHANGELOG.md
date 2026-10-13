@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.3.0 - 2026-10-13
+
+### Changed
+
+- **Requires `phoenix_kit >= 2.38.0 and < 3.0.0`** (the module toggle logs through
+  core's `PhoenixKit.Activity.log/3`). Adds a `gettext ~> 1.0` dependency: the
+  module now ships its own backend with `en`, `et` and `ru` catalogues.
+- The Activity page no longer installs a trigger on `phoenix_kit_settings`; it
+  only refreshes the notification function. A table is watched once its Show
+  page has been opened.
+- Row totals above 100,000 rows show the planner estimate, labelled approximate,
+  instead of running `COUNT(*)`.
+- Tables whose schema or table name is outside `[a-zA-Z0-9_]` are left out of
+  every list and counted on the Index page.
+
+### Added
+
+- Secret masking: values in secret-named columns, secret-named JSON keys and
+  `value*` columns of secret-keyed key/value rows are replaced by a placeholder
+  before they reach the page, on the Show page and the Activity feed. Row search
+  never reads anything that masking hides.
+- One total value formatter (`PhoenixKitDb.Cells`) for every Postgres type.
+- Trigger DDL runs under a lock timeout; `disable_system/0` removes every
+  trigger it installed; `remove_all_triggers/0` reports leftovers.
+- The notification function is replaced only when its body is outdated, under an
+  advisory lock. A row id too large for a notification no longer aborts the write
+  (the event is sent without the id).
+
+### Fixed
+
+- A row id containing `:` no longer drops its notification.
+- Index and Activity pages load their data once per render pass.
+- Row lookup works for uuid, integer and text primary keys, and for primary keys
+  with `INCLUDE` columns; citext columns are searched; a search with no
+  searchable column matches nothing instead of everything.
+- Searching the table list for `1` stays in the URL; out-of-range pages are
+  clamped; a table dropped while open redirects with a flash.
+- Activity Clear and filter changes discard buffered events; Show highlight
+  timers no longer clear a later refresh's highlights.
+- Fold-out sections no longer close whenever the page re-renders.
+- Page markers are bounded for very large tables.
+
 ## 0.2.1 - 2026-08-11
 
 ### Changed
