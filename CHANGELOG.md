@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Core pin widened to accept core 3.x** (ceiling `< 4.0.0`; the floor is unchanged).
+
 ## 0.3.0 - 2026-10-13
 
 ### Changed

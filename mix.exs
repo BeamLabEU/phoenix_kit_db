@@ -81,7 +81,7 @@ defmodule PhoenixKitDb.MixProject do
       # the module toggle.
       # Patch-precise floor in the compound form, so the ceiling stays open
       # through every later 2.x minor (see test/core_pin_conformance_test.exs).
-      pk_dep(:phoenix_kit, ">= 2.38.0 and < 3.0.0"),
+      pk_dep(:phoenix_kit, ">= 2.38.0 and < 4.0.0"),
       {:phoenix_live_view, "~> 1.1"},
       {:gettext, "~> 1.0"},
 
