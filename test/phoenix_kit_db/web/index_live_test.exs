@@ -12,7 +12,7 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
   describe "mount" do
     test "renders the page heading and stats cards", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db")
+      {:ok, _view, html} = live(conn, "/admin/db")
 
       # Core renders a header subtitle only when the site-wide
       # `show_page_descriptions` setting is on (off by default), so the
@@ -30,20 +30,20 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
     end
 
     test "renders the search form", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db")
+      {:ok, _view, html} = live(conn, "/admin/db")
 
       assert html =~ "Filter by schema or table name"
     end
 
     test "shows the Live Activity action button linking to /admin/db/activity", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db")
+      {:ok, _view, html} = live(conn, "/admin/db")
 
       # Verify the link target is the activity subpath
       assert html =~ ~r{href="[^"]*/admin/db/activity"}
     end
 
     test "renders the pg_stat_user_tables list", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db")
+      {:ok, _view, html} = live(conn, "/admin/db")
 
       # Page 1 alphabetically starts with the oban_* tables — pin one
       # of those rather than something deeper (which would shift across
@@ -54,14 +54,14 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
   describe "search" do
     test "a search for the literal 1 stays in the URL", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db")
+      {:ok, view, _html} = live(conn, "/admin/db")
       view |> form("#db-table-search", %{"search" => "1"}) |> render_change()
-      assert_patch(view, "/en/admin/db?search=1")
+      assert_patch(view, "/admin/db?search=1")
       assert assigns(view).search == "1"
     end
 
     test "filtering by schema patches the URL with ?search=", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db")
+      {:ok, view, _html} = live(conn, "/admin/db")
 
       result =
         view
@@ -71,23 +71,23 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
       # Filter shows in rendered output (the search input keeps its value)
       assert result =~ ~s(value="phoenix_kit_settings")
       # Page-1 default is dropped from the URL; only search remains.
-      assert_patch(view, "/en/admin/db?search=phoenix_kit_settings")
+      assert_patch(view, "/admin/db?search=phoenix_kit_settings")
       assert texts(result, "tbody td a.font-semibold") == ["public.phoenix_kit_settings"]
     end
 
     test "clearing the search returns to the unfiltered URL", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db?search=phoenix_kit_settings")
+      {:ok, view, _html} = live(conn, "/admin/db?search=phoenix_kit_settings")
 
       view |> form("#db-table-search", %{"search" => ""}) |> render_change()
 
-      assert_patch(view, "/en/admin/db")
+      assert_patch(view, "/admin/db")
     end
   end
 
   describe "the page loads its data once per render pass" do
     test "one table listing for the dead render and one for the connected one", %{conn: conn} do
       {{:ok, view, _html}, statements} =
-        QueryCounter.capture(fn -> live(conn, "/en/admin/db") end)
+        QueryCounter.capture(fn -> live(conn, "/admin/db") end)
 
       listings = Enum.filter(statements, &(&1 =~ "pg_stat_user_tables" and &1 =~ "LIMIT $"))
       assert length(listings) == 2
@@ -103,7 +103,7 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
     test "the database stats are read once per render pass too", %{conn: conn} do
       {{:ok, _view, _html}, statements} =
-        QueryCounter.capture(fn -> live(conn, "/en/admin/db") end)
+        QueryCounter.capture(fn -> live(conn, "/admin/db") end)
 
       assert QueryCounter.count(statements, "pg_database_size") == 2
     end
@@ -111,14 +111,14 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
   describe "tables this page cannot open" do
     test "are not linked, and the page says how many were left out", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db")
+      {:ok, _view, html} = live(conn, "/admin/db")
       assert texts(html, "#db-hidden-tables") == []
 
       Fixtures.sql!(~s|CREATE TABLE "pk_db-dash" (id int PRIMARY KEY)|)
       Fixtures.sql!(~s|CREATE TABLE "pk_db.dot" (id int PRIMARY KEY)|)
       Fixtures.sql!(~s|CREATE TABLE pk_db_fine (id int PRIMARY KEY)|)
 
-      {:ok, _view, html} = live(conn, "/en/admin/db?search=pk_db")
+      {:ok, _view, html} = live(conn, "/admin/db?search=pk_db")
 
       assert texts(html, "tbody td a.font-semibold") == ["public.pk_db_fine"]
       assert [note] = texts(html, "#db-hidden-tables")
@@ -128,7 +128,7 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
   describe "live updates" do
     test "a broadcast on topic_all reaches the page and schedules one refresh", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db")
+      {:ok, view, _html} = live(conn, "/admin/db")
       refute assigns(view).refresh_scheduled
 
       # Nothing but the page's own subscription delivers this.
@@ -139,7 +139,7 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
     end
 
     test "a broadcast on a table topic does not reach the page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db")
+      {:ok, view, _html} = live(conn, "/admin/db")
 
       PubSub.broadcast(
         PubSub.topic_table("public", "x"),
@@ -150,7 +150,7 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
     end
 
     test "the debounced refresh re-reads the table list and the stats", %{conn: conn} do
-      {:ok, view, html} = live(conn, "/en/admin/db?search=pk_db_fresh")
+      {:ok, view, html} = live(conn, "/admin/db?search=pk_db_fresh")
 
       assert html =~ "No tables found."
       tables_before = assigns(view).stats.table_count
@@ -171,7 +171,7 @@ defmodule PhoenixKitDb.Web.IndexLiveTest do
 
   describe "handle_info catch-all (defensive)" do
     test "an unknown message changes nothing on the page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db")
+      {:ok, view, _html} = live(conn, "/admin/db")
       before = render(view)
 
       send(view.pid, :some_unrelated_message)

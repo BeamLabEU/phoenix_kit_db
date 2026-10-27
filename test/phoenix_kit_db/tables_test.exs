@@ -102,13 +102,14 @@ defmodule PhoenixKitDb.TablesTest do
 
   describe "list_table_names/0" do
     test "returns every openable table, past what one list_tables page can hold" do
+      create_filler_tables!()
       create_unsupported_tables()
       create_supported_oddities()
 
       names = PhoenixKitDb.list_table_names()
       total = PhoenixKitDb.list_tables(%{}).total_entries
 
-      assert total > 100, "the core schema is expected to have more than 100 tables"
+      assert total > 100, "the schema is expected to have more than 100 tables"
       assert length(names) == total
       assert names == Enum.sort(names)
       assert {"public", "phoenix_kit_settings"} in names

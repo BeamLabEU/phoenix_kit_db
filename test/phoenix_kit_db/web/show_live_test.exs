@@ -31,7 +31,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
   describe "mount with valid table" do
     test "renders columns and row count for phoenix_kit_settings", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db/public/phoenix_kit_settings")
+      {:ok, _view, html} = live(conn, "/admin/db/public/phoenix_kit_settings")
 
       # Heading is the schema.table identifier (programmatic — not gettext-wrapped).
       assert html =~ "public.phoenix_kit_settings"
@@ -46,16 +46,16 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
     end
 
     test "the header trail is DB / <schema.table>", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/phoenix_kit_settings")
+      {:ok, view, _html} = live(conn, "/admin/db/public/phoenix_kit_settings")
 
       assert assigns(view).page_section == "DB"
-      assert assigns(view).page_section_path == "/en/admin/db"
+      assert assigns(view).page_section_path == "/admin/db"
       assert assigns(view).page_crumbs == []
       assert assigns(view).page_title == "public.phoenix_kit_settings"
     end
 
     test "renders pagination controls + Show/per-page form (gettext deltas)", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db/public/phoenix_kit_settings")
+      {:ok, _view, html} = live(conn, "/admin/db/public/phoenix_kit_settings")
 
       # Show/per page labels (delta — gettext-wrapped)
       assert html =~ "Show"
@@ -72,7 +72,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       Fixtures.sql!(~s|CREATE TABLE pk_db_other."PkDbUpper" (id int PRIMARY KEY, label text)|)
       Fixtures.sql!(~s|INSERT INTO pk_db_other."PkDbUpper" VALUES (1, 'upper row')|)
 
-      {:ok, _view, html} = live(conn, "/en/admin/db/pk_db_other/PkDbUpper")
+      {:ok, _view, html} = live(conn, "/admin/db/pk_db_other/PkDbUpper")
 
       assert first_row(html) == %{"id" => "1", "label" => "upper row"}
     end
@@ -82,7 +82,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
     test "one COUNT and one SELECT for the dead render, one each for the connected one",
          %{conn: conn} do
       {{:ok, view, _html}, statements} =
-        QueryCounter.capture(fn -> live(conn, "/en/admin/db/public/phoenix_kit_settings") end)
+        QueryCounter.capture(fn -> live(conn, "/admin/db/public/phoenix_kit_settings") end)
 
       assert QueryCounter.count(statements, ~s|COUNT(*) FROM "public"."phoenix_kit_settings"|) ==
                2
@@ -102,7 +102,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
     test "are masked in the HTML and absent from the LiveView's state", %{conn: conn} do
       Fixtures.create_secrets_table()
 
-      {:ok, view, html} = live(conn, "/en/admin/db/public/pk_db_secrets")
+      {:ok, view, html} = live(conn, "/admin/db/public/pk_db_secrets")
 
       row = first_row(render(view))
 
@@ -127,7 +127,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
     test "stay masked after a live refresh", %{conn: conn} do
       Fixtures.create_secrets_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_secrets")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_secrets")
 
       Fixtures.sql!("UPDATE pk_db_secrets SET hashed_password = 'LEAK-rotated', note = 'edited'")
       send(view.pid, {:table_changed, "public", "pk_db_secrets", "UPDATE", "1"})
@@ -145,7 +145,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
          %{conn: conn} do
       Fixtures.create_types_table()
 
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_types")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_types")
 
       row = first_row(render(view))
 
@@ -162,7 +162,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
     test "a uuid primary key is canonical text, not a byte list", %{conn: conn} do
       [uuid | _] = create_rows_table()
 
-      {:ok, _view, html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      {:ok, _view, html} = live(conn, "/admin/db/public/pk_db_rows")
 
       assert first_row(html)["uuid"] == uuid
       refute html =~ "&lt;&lt;"
@@ -172,34 +172,34 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
   describe "mount with invalid table → graceful flash + redirect" do
     test "schema with unsafe characters redirects to /admin/db", %{conn: conn} do
       assert {:error, {:live_redirect, %{to: redirect_to, flash: flash}}} =
-               live(conn, "/en/admin/db/bad-schema/users")
+               live(conn, "/admin/db/bad-schema/users")
 
-      assert redirect_to == "/en/admin/db"
+      assert redirect_to == "/admin/db"
       # Flash text is gettext-wrapped, with %{schema}/%{table} substitutions.
       assert flash["error"] =~ "Table bad-schema.users not found"
     end
 
     test "table with unsafe characters redirects to /admin/db", %{conn: conn} do
       assert {:error, {:live_redirect, %{to: redirect_to, flash: flash}}} =
-               live(conn, "/en/admin/db/public/bad-table-name")
+               live(conn, "/admin/db/public/bad-table-name")
 
-      assert redirect_to == "/en/admin/db"
+      assert redirect_to == "/admin/db"
       assert flash["error"] =~ "Table public.bad-table-name not found"
     end
 
     test "non-existent valid-name table redirects to /admin/db", %{conn: conn} do
       assert {:error, {:live_redirect, %{to: redirect_to, flash: flash}}} =
-               live(conn, "/en/admin/db/public/no_such_table_anywhere")
+               live(conn, "/admin/db/public/no_such_table_anywhere")
 
-      assert redirect_to == "/en/admin/db"
+      assert redirect_to == "/admin/db"
       assert flash["error"] =~ "Table public.no_such_table_anywhere not found"
     end
 
     test "an existing table whose name cannot be quoted redirects too", %{conn: conn} do
       Fixtures.sql!(~s|CREATE TABLE "pk_db-dash" (id int PRIMARY KEY)|)
 
-      assert {:error, {:live_redirect, %{to: "/en/admin/db", flash: flash}}} =
-               live(conn, "/en/admin/db/public/pk_db-dash")
+      assert {:error, {:live_redirect, %{to: "/admin/db", flash: flash}}} =
+               live(conn, "/admin/db/public/pk_db-dash")
 
       assert flash["error"] =~ "Table public.pk_db-dash not found"
     end
@@ -207,7 +207,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
   describe "pagination" do
     test "set_per_page recalculates the page number to keep position", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/phoenix_kit_settings")
+      {:ok, view, _html} = live(conn, "/admin/db/public/phoenix_kit_settings")
 
       result = view |> form("#db-per-page", %{"per_page" => "50"}) |> render_change()
 
@@ -215,11 +215,11 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       assert result =~ ~r/<option value="50" selected/
 
       # The patch carries the new per_page; page=1 is dropped from URL.
-      assert_patch(view, "/en/admin/db/public/phoenix_kit_settings?per_page=50")
+      assert_patch(view, "/admin/db/public/phoenix_kit_settings?per_page=50")
     end
 
     test "change_page reaches a new page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/phoenix_kit_settings?per_page=10")
+      {:ok, view, _html} = live(conn, "/admin/db/public/phoenix_kit_settings?per_page=10")
 
       result = view |> element(~s|button[title="Next page"]|) |> render_click()
 
@@ -229,20 +229,20 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
     test "malformed page param falls back to page 1", %{conn: conn} do
       # parse_page/1's fallback branch — non-integer string becomes 1.
-      {:ok, _view, html} = live(conn, "/en/admin/db/public/phoenix_kit_settings?page=bogus")
+      {:ok, _view, html} = live(conn, "/admin/db/public/phoenix_kit_settings?page=bogus")
 
       assert html =~ ~r/Page\s+1\s+of\s+\d+/
     end
 
     test "out-of-allowlist per_page falls back to default 20", %{conn: conn} do
       # parse_per_page/1 only accepts [10, 20, 50, 100, 200]; 9999 → 20.
-      {:ok, _view, html} = live(conn, "/en/admin/db/public/phoenix_kit_settings?per_page=9999")
+      {:ok, _view, html} = live(conn, "/admin/db/public/phoenix_kit_settings?per_page=9999")
 
       assert html =~ ~r/<option value="20" selected/
     end
 
     test "non-numeric per_page param falls back to default", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db/public/phoenix_kit_settings?per_page=abc")
+      {:ok, _view, html} = live(conn, "/admin/db/public/phoenix_kit_settings?per_page=abc")
 
       assert html =~ ~r/<option value="20" selected/
     end
@@ -252,7 +252,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
     test "deleting the last page reloads the nearest remaining page", %{conn: conn} do
       Fixtures.sql!("CREATE TABLE pk_db_pages (id int PRIMARY KEY)")
       Fixtures.sql!("INSERT INTO pk_db_pages SELECT generate_series(1, 11)")
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_pages?per_page=10&page=2")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_pages?per_page=10&page=2")
       Fixtures.sql!("DELETE FROM pk_db_pages WHERE id = 11")
       send(view.pid, :debounced_refresh)
       assert assigns(view).preview.page == 1
@@ -261,15 +261,15 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
     test "a dropped table redirects on live refresh", %{conn: conn} do
       create_rows_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_rows")
       Fixtures.sql!("DROP TABLE pk_db_rows")
       send(view.pid, :debounced_refresh)
-      assert_redirect(view, "/en/admin/db")
+      assert_redirect(view, "/admin/db")
     end
 
     test "an old highlight timer cannot clear a newer refresh", %{conn: conn} do
       create_rows_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_rows")
       Fixtures.sql!("UPDATE pk_db_rows SET label = 'first edit'")
       send(view.pid, :debounced_refresh)
       render(view)
@@ -306,7 +306,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       Fixtures.sql!("CREATE TABLE pk_db_pages (id int PRIMARY KEY)")
       Fixtures.sql!("INSERT INTO pk_db_pages SELECT generate_series(1, 400)")
 
-      {:ok, _view, html} = live(conn, "/en/admin/db/public/pk_db_pages?per_page=10")
+      {:ok, _view, html} = live(conn, "/admin/db/public/pk_db_pages?per_page=10")
 
       markers = texts(html, "#page-markers .page-marker")
 
@@ -322,7 +322,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       Fixtures.sql!("CREATE TABLE pk_db_small (id int PRIMARY KEY)")
       Fixtures.sql!("INSERT INTO pk_db_small SELECT generate_series(1, 7)")
 
-      {:ok, view, html} = live(conn, "/en/admin/db/public/pk_db_small")
+      {:ok, view, html} = live(conn, "/admin/db/public/pk_db_small")
 
       assert has_element?(view, ~s|#db-row-total[data-approximate="false"]|)
       assert texts(html, "#db-row-total") == ["7 rows total"]
@@ -334,7 +334,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       Fixtures.sql!("ANALYZE pk_db_big")
 
       {{:ok, view, html}, statements} =
-        QueryCounter.capture(fn -> live(conn, "/en/admin/db/public/pk_db_big") end)
+        QueryCounter.capture(fn -> live(conn, "/admin/db/public/pk_db_big") end)
 
       assert has_element?(view, ~s|#db-row-total[data-approximate="true"]|)
       assert [total] = texts(html, "#db-row-total")
@@ -345,7 +345,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
   describe "live updates" do
     test ":table_changed for the viewed table schedules one refresh", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/phoenix_kit_settings")
+      {:ok, view, _html} = live(conn, "/admin/db/public/phoenix_kit_settings")
 
       refute assigns(view).refresh_scheduled
 
@@ -356,7 +356,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
     end
 
     test ":table_changed for a different table is ignored", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/phoenix_kit_settings")
+      {:ok, view, _html} = live(conn, "/admin/db/public/phoenix_kit_settings")
 
       send(view.pid, {:table_changed, "public", "different_table", "INSERT", "1"})
 
@@ -365,7 +365,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
     test "a changed row is highlighted by its primary key, then cleared", %{conn: conn} do
       [_first, second, _third] = create_rows_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_rows")
       refute has_element?(view, "tr.animate-highlight")
 
       Fixtures.sql!("UPDATE pk_db_rows SET label = 'edited' WHERE uuid = $1::text::uuid", [second])
@@ -386,7 +386,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
     test "an added row is highlighted and counted in the flash", %{conn: conn} do
       create_rows_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_rows")
 
       added = "018f3c1e-7a2b-7c3d-8e4f-000000000009"
       Fixtures.sql!("INSERT INTO pk_db_rows VALUES ($1::text::uuid, 'fresh')", [added])
@@ -398,7 +398,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
     test "removed rows are counted in the flash and nothing is highlighted", %{conn: conn} do
       [first, second, _third] = create_rows_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_rows")
 
       Fixtures.sql!(
         "DELETE FROM pk_db_rows WHERE uuid IN ($1::text::uuid, $2::text::uuid)",
@@ -415,7 +415,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
     test "a refresh that finds nothing changed says nothing", %{conn: conn} do
       create_rows_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_rows")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_rows")
 
       send(view.pid, :debounced_refresh)
 
@@ -426,7 +426,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
     test "a table without a primary key highlights by position", %{conn: conn} do
       Fixtures.sql!("CREATE TABLE pk_db_no_pk (a int, b text)")
       Fixtures.sql!("INSERT INTO pk_db_no_pk VALUES (1, 'one')")
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_no_pk")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_no_pk")
 
       Fixtures.sql!("UPDATE pk_db_no_pk SET b = 'uno'")
       send(view.pid, :debounced_refresh)
@@ -438,7 +438,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
       Fixtures.sql!("CREATE TABLE pk_db_big (id int PRIMARY KEY, label text)")
       Fixtures.sql!("INSERT INTO pk_db_big SELECT n, 'r' FROM generate_series(1, 100500) n")
       Fixtures.sql!("ANALYZE pk_db_big")
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/pk_db_big")
+      {:ok, view, _html} = live(conn, "/admin/db/public/pk_db_big")
 
       Fixtures.sql!("DELETE FROM pk_db_big WHERE id > 100000")
       Fixtures.sql!("UPDATE pk_db_big SET label = 'edited' WHERE id = 1")
@@ -451,7 +451,7 @@ defmodule PhoenixKitDb.Web.ShowLiveTest do
 
   describe "handle_info catch-all (defensive)" do
     test "an unknown message changes nothing on the page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/phoenix_kit_settings")
+      {:ok, view, _html} = live(conn, "/admin/db/public/phoenix_kit_settings")
       before = render(view)
 
       send(view.pid, :some_random_atom)

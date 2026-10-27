@@ -259,7 +259,7 @@ defmodule PhoenixKitDb.CommittedTriggerTest do
       conn = build_conn() |> Plug.Test.init_test_session(%{}) |> put_test_scope(fake_scope())
 
       {{:ok, view, html}, log} =
-        with_log(fn -> live(conn, "/en/admin/db/public/#{@table}") end)
+        with_log(fn -> live(conn, "/admin/db/public/#{@table}") end)
 
       assert has_element?(view, "#db-live-updates-unavailable")
       assert html =~ "Live updates are not available for this table right now"
@@ -305,7 +305,7 @@ defmodule PhoenixKitDb.CommittedTriggerTest do
     test "shows no live-updates note" do
       conn = build_conn() |> Plug.Test.init_test_session(%{}) |> put_test_scope(fake_scope())
 
-      {:ok, view, _html} = live(conn, "/en/admin/db/public/#{@table}")
+      {:ok, view, _html} = live(conn, "/admin/db/public/#{@table}")
 
       refute has_element?(view, "#db-live-updates-unavailable")
       assert PhoenixKitDb.has_trigger?("public", @table)

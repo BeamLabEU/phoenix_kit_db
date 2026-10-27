@@ -55,7 +55,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
   describe "mount" do
     test "renders empty state and gettext-wrapped controls", %{conn: conn} do
-      {:ok, view, html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, html} = live(conn, "/admin/db/activity")
 
       # Heading
       assert html =~ "Live Database Activity"
@@ -72,7 +72,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "says which tables it watches, and does not claim all of them", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db/activity")
+      {:ok, _view, html} = live(conn, "/admin/db/activity")
 
       assert html =~ "Showing changes to tables that have been opened in the DB explorer"
       assert html =~ "A table is watched from the first time its page is opened."
@@ -80,16 +80,16 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "the header trail is DB / Activity", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       assert assigns(view).page_section == "DB"
-      assert assigns(view).page_section_path == "/en/admin/db"
+      assert assigns(view).page_section_path == "/admin/db"
       assert assigns(view).page_crumbs == []
       assert assigns(view).page_title == "Activity"
     end
 
     test "renders the filter form labels", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db/activity")
+      {:ok, _view, html} = live(conn, "/admin/db/activity")
 
       # Filter labels (delta — gettext-wrapped)
       assert html =~ ~r/<span[^>]*fieldset-legend[^>]*>\s*Table\s*</
@@ -100,7 +100,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "0 events counter rendered when log is empty", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/en/admin/db/activity")
+      {:ok, _view, html} = live(conn, "/admin/db/activity")
 
       # ngettext singular when count == 0 ("0 events")
       assert html =~ "0 events"
@@ -109,10 +109,11 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
   describe "table filter options" do
     test "every table is offered, not just the first hundred", %{conn: conn} do
+      PhoenixKitDb.DataCase.create_filler_tables!()
       names = Enum.map(PhoenixKitDb.list_table_names(), fn {s, t} -> "#{s}.#{t}" end)
       assert length(names) > 100
 
-      {:ok, _view, html} = live(conn, "/en/admin/db/activity")
+      {:ok, _view, html} = live(conn, "/admin/db/activity")
 
       options =
         html
@@ -130,7 +131,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
         |> Enum.sort()
         |> List.last()
 
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity?table=#{last}")
+      {:ok, view, _html} = live(conn, "/admin/db/activity?table=#{last}")
 
       assert has_element?(
                view,
@@ -142,7 +143,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
     test "a ?table= link naming an unlisted table still shows it as the selection",
          %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity?table=public.pk_db_gone")
+      {:ok, view, _html} = live(conn, "/admin/db/activity?table=public.pk_db_gone")
 
       assert has_element?(
                view,
@@ -154,7 +155,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
   describe "the page loads its data once per render pass" do
     test "one table listing for the dead render and one for the connected one", %{conn: conn} do
       {{:ok, _view, _html}, statements} =
-        QueryCounter.capture(fn -> live(conn, "/en/admin/db/activity") end)
+        QueryCounter.capture(fn -> live(conn, "/admin/db/activity") end)
 
       listings = Enum.filter(statements, &(&1 =~ "pg_stat_user_tables" and &1 =~ "ORDER BY"))
       assert length(listings) == 2
@@ -163,7 +164,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
   describe "filters, through the form" do
     test "both selects sit in one form that sends one event", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       assert has_element?(
                view,
@@ -180,7 +181,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "filtering by table keeps that table and drops the others", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       html =
         view
@@ -199,7 +200,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "filtering by operation keeps that operation and drops the others", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       html = view |> form("#activity-filters", %{"operation" => "DELETE"}) |> render_change()
       assert html =~ ~s(<option value="DELETE" selected)
@@ -214,7 +215,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
     test "both filters apply together, and clearing them shows everything again",
          %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       view
       |> form("#activity-filters", %{
@@ -239,7 +240,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
   describe ":table_changed message handling" do
     test "an event becomes an entry on the flush timer, without anyone asking", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       notify(view, "phoenix_kit_settings", "DELETE", "0")
 
@@ -256,7 +257,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "ignores entries when paused", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       view |> element(~s|button[phx-click="toggle_pause"]|) |> render_click()
 
@@ -266,7 +267,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "an INSERT whose row cannot be found says so", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       notify(view, "phoenix_kit_settings", "INSERT", Ecto.UUID.generate())
       html = flush(view)
@@ -276,7 +277,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "a DELETE shows that the row is gone", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       notify(view, "phoenix_kit_settings", "DELETE", Ecto.UUID.generate())
 
@@ -287,7 +288,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
   describe "entries carrying row data" do
     test "an INSERT shows the row with secrets masked and marks every key new", %{conn: conn} do
       id = Fixtures.create_secrets_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       notify(view, "pk_db_secrets", "INSERT", Integer.to_string(id))
       html = flush(view)
@@ -314,7 +315,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
     test "an UPDATE marks only the keys that changed", %{conn: conn} do
       id = Fixtures.create_secrets_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       notify(view, "pk_db_secrets", "INSERT", Integer.to_string(id))
       flush(view)
@@ -330,7 +331,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
     test "every column type renders, and none of them takes the feed down", %{conn: conn} do
       uuid = Fixtures.create_types_table()
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       notify(view, "pk_db_types", "INSERT", uuid)
       html = flush(view)
@@ -366,7 +367,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "is cut to what the log can show, and the rest is counted", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       {html, statements} =
         QueryCounter.capture(fn ->
@@ -390,7 +391,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "remembered rows are pruned to the entries still on the page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       for id <- 1..100, do: notify(view, "pk_db_burst", "INSERT", Integer.to_string(id))
       flush(view)
@@ -409,7 +410,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "Pause stops the feed without working through the backlog", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       {html, statements} =
         QueryCounter.capture(fn ->
@@ -428,7 +429,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "Clear resets the skipped count with the log", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       for id <- 1..150, do: notify(view, "pk_db_burst", "INSERT", Integer.to_string(id))
       flush(view)
@@ -443,12 +444,12 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
   describe "controls" do
     test "opening Activity does not start watching the settings table", %{conn: conn} do
-      {:ok, _view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, _view, _html} = live(conn, "/admin/db/activity")
       refute PhoenixKitDb.has_trigger?("public", "phoenix_kit_settings")
     end
 
     test "Clear discards pending events and the next event still flushes", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
       notify(view, "pending", "INSERT", nil)
       view |> element(~s|button[phx-click="clear_log"]|) |> render_click()
       flush(view)
@@ -459,7 +460,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "changing the filter drops pending events from the previous filter", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
       notify(view, "old_filter", "INSERT", nil)
       view |> form("#activity-filters", %{"operation" => "DELETE"}) |> render_change()
       flush(view)
@@ -470,7 +471,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "toggle_pause flips the badge state", %{conn: conn} do
-      {:ok, view, html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, html} = live(conn, "/admin/db/activity")
 
       # Initially watching
       assert html =~ "Showing changes to tables"
@@ -484,7 +485,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "resuming picks the feed up again", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       view |> element(~s|button[phx-click="toggle_pause"]|) |> render_click()
       view |> element(~s|button[phx-click="toggle_pause"]|) |> render_click()
@@ -494,7 +495,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
     end
 
     test "clear_log empties the activity feed", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
 
       notify(view, "phoenix_kit_settings", "DELETE", "0")
       assert flush(view) =~ "1 event"
@@ -507,7 +508,7 @@ defmodule PhoenixKitDb.Web.ActivityLiveTest do
 
   describe "handle_info catch-all (defensive)" do
     test "an unknown message changes nothing on the page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/db/activity")
+      {:ok, view, _html} = live(conn, "/admin/db/activity")
       before = render(view)
 
       send(view.pid, :random_atom)

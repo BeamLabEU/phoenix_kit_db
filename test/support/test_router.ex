@@ -4,10 +4,8 @@ defmodule PhoenixKitDb.Test.Router do
   produced by `PhoenixKitDb.Paths` so `live/2` calls in tests work with
   exactly the same URLs the LiveViews push themselves to.
 
-  `PhoenixKit.Utils.Routes.path/1` defaults to no URL prefix when the
-  `phoenix_kit_settings` table is unavailable, and admin paths always
-  get the default locale ("en") prefix — so our base becomes
-  `/en/admin/db`.
+  `PhoenixKit.Utils.Routes.path/1` gives an unprefixed admin path here, so
+  our base is `/admin/db`.
   """
 
   use Phoenix.Router
@@ -22,23 +20,19 @@ defmodule PhoenixKitDb.Test.Router do
     plug(:protect_from_forgery)
   end
 
-  # Both bases: older cores put the default locale ("en") before admin paths,
-  # newer ones leave it off when the path is not localized, and the LiveViews
-  # push to whatever `PhoenixKitDb.Paths` returns.
-  for {base, session} <- [
-        {"/en/admin/db", :phoenix_kit_db_test},
-        {"/admin/db", :phoenix_kit_db_test_unprefixed}
-      ] do
-    scope base, PhoenixKitDb.Web do
-      pipe_through(:browser)
+  # The LiveViews push to whatever `PhoenixKitDb.Paths` returns, which is
+  # unprefixed here (`PhoenixKit.Utils.Routes.path/1` adds a locale only for a
+  # localized request), and phoenix_live_view 1.2 refuses to patch to a path of
+  # another live_session.
+  scope "/admin/db", PhoenixKitDb.Web do
+    pipe_through(:browser)
 
-      live_session session,
-        layout: {PhoenixKitDb.Test.Layouts, :app},
-        on_mount: {PhoenixKitDb.Test.Hooks, :assign_scope} do
-        live("/", IndexLive, :index)
-        live("/activity", ActivityLive, :activity)
-        live("/:schema/:table", ShowLive, :show)
-      end
+    live_session :phoenix_kit_db_test,
+      layout: {PhoenixKitDb.Test.Layouts, :app},
+      on_mount: {PhoenixKitDb.Test.Hooks, :assign_scope} do
+      live("/", IndexLive, :index)
+      live("/activity", ActivityLive, :activity)
+      live("/:schema/:table", ShowLive, :show)
     end
   end
 end

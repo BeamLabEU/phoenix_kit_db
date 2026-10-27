@@ -55,4 +55,17 @@ defmodule PhoenixKitDb.DataCase do
       end)
     end)
   end
+
+  @doc """
+  Pads the schema with empty tables so there are more than one page (100) of
+  them. Core 3.0 creates about 40 tables on its own; the modules' tables made
+  up the rest of the hundred. The tables vanish with the sandbox transaction.
+  """
+  def create_filler_tables!(count \\ 110) do
+    for n <- 1..count do
+      TestRepo.query!("CREATE TABLE IF NOT EXISTS pk_db_fill_#{n} (id integer)")
+    end
+
+    :ok
+  end
 end
