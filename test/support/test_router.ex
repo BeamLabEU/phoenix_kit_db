@@ -22,15 +22,23 @@ defmodule PhoenixKitDb.Test.Router do
     plug(:protect_from_forgery)
   end
 
-  scope "/en/admin/db", PhoenixKitDb.Web do
-    pipe_through(:browser)
+  # Both bases: older cores put the default locale ("en") before admin paths,
+  # newer ones leave it off when the path is not localized, and the LiveViews
+  # push to whatever `PhoenixKitDb.Paths` returns.
+  for {base, session} <- [
+        {"/en/admin/db", :phoenix_kit_db_test},
+        {"/admin/db", :phoenix_kit_db_test_unprefixed}
+      ] do
+    scope base, PhoenixKitDb.Web do
+      pipe_through(:browser)
 
-    live_session :phoenix_kit_db_test,
-      layout: {PhoenixKitDb.Test.Layouts, :app},
-      on_mount: {PhoenixKitDb.Test.Hooks, :assign_scope} do
-      live("/", IndexLive, :index)
-      live("/activity", ActivityLive, :activity)
-      live("/:schema/:table", ShowLive, :show)
+      live_session session,
+        layout: {PhoenixKitDb.Test.Layouts, :app},
+        on_mount: {PhoenixKitDb.Test.Hooks, :assign_scope} do
+        live("/", IndexLive, :index)
+        live("/activity", ActivityLive, :activity)
+        live("/:schema/:table", ShowLive, :show)
+      end
     end
   end
 end
