@@ -25,7 +25,7 @@ A dedicated `Postgrex.Notifications` connection (the `PhoenixKitDb.Listener`
 GenServer) parses notifications on the `phoenix_kit_db_changes` channel and
 rebroadcasts them via `PhoenixKitDb.PubSub`.
 
-- **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex); `phoenix_live_view` `~> 1.1`;
+- **Depends on:** `phoenix_kit` `>= 3.5.0 and < 4.0.0` (Hex); `phoenix_live_view` `~> 1.1`;
   `gettext` `~> 1.0` (the module's own backend);
   `postgrex` `~> 0.17` (`Postgrex.Notifications` for the Listener); test-only
   `lazy_html`. No sibling `phoenix_kit_*` deps. The module toggles log through
@@ -257,7 +257,7 @@ Repo-local aliases and details:
   functions do not acquire it.
 - **`handle_info/2` catch-all:** every LV and the Listener has a defensive
   catch-all that logs at `:debug` and returns `{:noreply, ...}`. Never silent.
-- **Core pin keeps the compound `>= 2.38.0 and < 3.0.0` form.**
+- **Core pin keeps the compound `>= 3.5.0 and < 4.0.0` form.**
   `test/core_pin_conformance_test.exs` fails on a three-segment form (which
   excludes the next core minor and breaks `mix deps.get` for every host) and on
   a committed `path:` dep.

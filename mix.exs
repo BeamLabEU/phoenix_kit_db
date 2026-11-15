@@ -77,11 +77,10 @@ defmodule PhoenixKitDb.MixProject do
 
   defp deps do
     [
-      # Core 2.38.0 added `PhoenixKit.Activity.log/3`, used directly by
-      # the module toggle.
-      # Patch-precise floor in the compound form, so the ceiling stays open
-      # through every later 2.x minor (see test/core_pin_conformance_test.exs).
-      pk_dep(:phoenix_kit, ">= 2.38.0 and < 4.0.0"),
+      # Floor 3.5.0 (the ecosystem-wide minimum), ceiling open through every
+      # core 3.x (see test/core_pin_conformance_test.exs). The module toggle
+      # calls core's `PhoenixKit.Activity.log/3` directly.
+      pk_dep(:phoenix_kit, ">= 3.5.0 and < 4.0.0"),
       {:phoenix_live_view, "~> 1.1"},
       {:gettext, "~> 1.0"},
 
