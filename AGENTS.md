@@ -473,6 +473,25 @@ Known test noise (all cosmetic):
 
 None. Feature behaviour is documented in `@moduledoc`s.
 
+## Content-Security-Policy
+
+The module works under a host policy that allows inline code by nonce only
+(`script-src 'self' 'nonce-…'`); core's guide is `guides/content-security-policy.md`.
+
+- An inline `<style>` / `<script>` carries the page's nonce:
+  `<style nonce={PhoenixKitDb.Web.CSP.nonce(:style)}>` (the row-highlight keyframes of
+  `show_live.html.heex` are the one such tag). `PhoenixKitDb.Web.CSP` feature-detects
+  core's `PhoenixKitWeb.CSP`, which is newer than this module's core floor: on an older
+  core it answers `nil` and no attribute is rendered. Never call `PhoenixKitWeb.CSP`
+  directly and never raise the core floor for it.
+- No inline event handlers (`onclick=`, `onerror=` …), in markup or in HTML the
+  bundle builds: no nonce covers an attribute. Use a `phx-` binding, or a hook /
+  listener in `priv/static/assets/phoenix_kit_db.js`.
+- A `<style>` / `<script>` the bundle creates is stamped before insertion:
+  `window.PhoenixKitInternals && window.PhoenixKitInternals.adoptStyle && window.PhoenixKitInternals.adoptStyle(el)`.
+- `test/csp_inline_tags_test.exs` enforces all of it. Inline `style="…"` attributes
+  are not covered yet.
+
 ## Versioning & releases
 
 SemVer. The version is single-sourced in `mix.exs` (`@version`); `version/0`
